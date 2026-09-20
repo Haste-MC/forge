@@ -114,7 +114,7 @@ public class SpellAbilityPicker {
      * Computes the deadline for one top-level decision from the game's AI timeout.
      * @return an absolute {@link System#nanoTime()} value, or {@link Long#MAX_VALUE} if the timeout is not positive
      */
-    public static long deadlineFor(Game game) {
+    private static long deadlineFor(Game game) {
         int timeoutSeconds = game.getAITimeout();
         if (timeoutSeconds <= 0) {
             return Long.MAX_VALUE;
@@ -199,7 +199,9 @@ public class SpellAbilityPicker {
             }
             numEvaluated++;
             Score value = evaluateSa(controller, phase, candidateSAs, i);
-            print("  " + abilityToString(candidateSAs.get(i)) + " -> " + value);
+            if (printOutput) {
+                print("  " + abilityToString(candidateSAs.get(i)) + " -> " + value);
+            }
             if (value.value > bestSaValue.value) {
                 bestSaValue = value;
                 bestSa = candidateSAs.get(i);
