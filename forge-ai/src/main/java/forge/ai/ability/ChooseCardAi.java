@@ -4,6 +4,8 @@ import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import forge.ai.*;
 import forge.game.Game;
+import forge.game.ability.AbilityUtils;
+import forge.game.ability.ApiType;
 import forge.game.card.*;
 import forge.game.combat.Combat;
 import forge.game.keyword.Keyword;
@@ -160,7 +162,20 @@ public class ChooseCardAi extends SpellAbilityAi {
         Card choice = null;
         if (logic.isEmpty()) {
             // Base Logic is choose "best"
-            choice = ComputerUtilCard.getBestAI(options);
+            final Player goader = goaderOfChosenCard(sa);
+            if (goader != null) {
+                // The chosen creature ends up goaded (e.g. "each player may put counters on a creature they
+                // control, then goad it"): only pick one that is not forced into a losing attack, otherwise
+                // decline when allowed or give up the creature we mind least.
+                CardCollection acceptable = CardLists.filter(options, c -> goadIsAcceptable(ai, sa, c, goader));
+                if (!acceptable.isEmpty()) {
+                    choice = ComputerUtilCard.getBestAI(acceptable);
+                } else if (!isOptional) {
+                    choice = ComputerUtilCard.getWorstAI(options);
+                }
+            } else {
+                choice = ComputerUtilCard.getBestAI(options);
+            }
         } else if ("WorstCard".equals(logic)) {
             choice = ComputerUtilCard.getWorstAI(options);
         } else if ("OwnCard".equals(logic)) {
@@ -281,5 +296,96 @@ public class ChooseCardAi extends SpellAbilityAi {
             System.err.println("Bad ChooseCard AILogic value for " + host.getName() + " - reverting to default");
         }
         return choice;
+    }
+
+    /**
+     * Checks whether the sub-ability chain of a ChooseCard ability goads the chosen card and returns
+     * the player who would goad it (the activator), or null if the chain doesn't goad the chosen card.
+     * Recognizes a Goad effect that is defined on the chosen card directly, or on cards a previous
+     * link of the chain remembered from the chosen card.
+     */
+    private static Player goaderOfChosenCard(final SpellAbility sa) {
+        boolean chosenRemembered = sa.hasParam("RememberChosen");
+        for (SpellAbility sub = sa.getSubAbility(); sub != null; sub = sub.getSubAbility()) {
+            final String defined = sub.getParamOrDefault("Defined", "");
+            if (sub.getApi() == ApiType.Goad && !sub.hasParam("NoLonger")) {
+                if (defined.contains("ChosenCard") || (chosenRemembered && defined.contains("Remembered"))) {
+                    return sa.getActivatingPlayer();
+                }
+            } else if (refersToChosenCard(sub) && hasRememberParam(sub)) {
+                chosenRemembered = true;
+            }
+        }
+        return null;
+    }
+
+    private static boolean refersToChosenCard(final SpellAbility sub) {
+        return sub.getParamOrDefault("Defined", "").contains("ChosenCard")
+                || sub.getParamOrDefault("ValidCards", "").contains("ChosenCard");
+    }
+
+    private static boolean hasRememberParam(final SpellAbility sub) {
+        for (String key : sub.getMapParams().keySet()) {
+            if (key.startsWith("Remember")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Number of +1/+1 counters the sub-ability chain of a ChooseCard ability puts on the chosen card
+     * before goading it.
+     */
+    private static int p1p1CountersOnChosenCard(final SpellAbility sa) {
+        int counters = 0;
+        for (SpellAbility sub = sa.getSubAbility(); sub != null; sub = sub.getSubAbility()) {
+            if ((sub.getApi() == ApiType.PutCounter || sub.getApi() == ApiType.PutCounterAll)
+                    && "P1P1".equals(sub.getParam("CounterType")) && refersToChosenCard(sub)) {
+                counters += AbilityUtils.calculateAmount(sa.getHostCard(), sub.getParamOrDefault("CounterNum", "1"), sub);
+            }
+        }
+        return counters;
+    }
+
+    /**
+     * Whether the AI can live with the creature being goaded by the given player: a goaded creature
+     * has to attack each combat, and a player other than the goader if able. Acceptable when the
+     * creature can't attack anyone anyway, or when at least one of the players it would be forced to
+     * attack can't block it profitably (evaluated with the +1/+1 counters the chain puts on it).
+     */
+    private static boolean goadIsAcceptable(final Player ai, final SpellAbility sa, final Card c, final Player goader) {
+        if (!c.isCreature()) {
+            return true;
+        }
+        final Card copy = CardCopyService.getLKICopy(c);
+        copy.setZone(c.getZone());
+        final int counters = p1p1CountersOnChosenCard(sa);
+        if (counters > 0) {
+            copy.setCounters(CounterEnumType.P1P1, copy.getCounters(CounterEnumType.P1P1) + counters);
+        }
+
+        final List<Player> attackable = Lists.newArrayList();
+        for (final Player opp : ai.getOpponents()) {
+            if (ComputerUtilCombat.canAttackNextTurn(copy, opp)) {
+                attackable.add(opp);
+            }
+        }
+        if (attackable.isEmpty()) {
+            // goad without a possible attack is harmless
+            return true;
+        }
+        // 701.38b: attack a player other than the goader if able, else the goader is fair game
+        List<Player> forced = Lists.newArrayList(attackable);
+        forced.remove(goader);
+        if (forced.isEmpty()) {
+            forced = attackable;
+        }
+        for (final Player defender : forced) {
+            if (!ComputerUtilCard.canBeBlockedProfitably(defender, copy, true)) {
+                return true;
+            }
+        }
+        return false;
     }
 }
