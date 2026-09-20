@@ -29,6 +29,11 @@ public class SpellAbilityChoicesIterator {
         int nextChoice = 0;
         Card selectedChoice;
         Score bestScoreForChoice = new Score(Integer.MIN_VALUE);
+        // True while this choice's evaluation level is on the controller's stack, i.e. chooseCard()
+        // pushed it for the current simulation. The simulator may bail out before reaching this
+        // choice again (e.g. "SA not found" on the copy) - then the level was never re-pushed and
+        // advance() must not pop it.
+        boolean open;
     }
     private final ArrayList<ChoicePoint> choicePoints = new ArrayList<>();
     private int incrementedCpIndex = 0;
@@ -114,6 +119,7 @@ public class SpellAbilityChoicesIterator {
         if (cpIndex >= incrementedCpIndex) {
             controller.evaluateCardChoice(cp.selectedChoice);
             evalDepth++;
+            cp.open = true;
         }
         return cp.selectedChoice;
     }
@@ -182,14 +188,14 @@ public class SpellAbilityChoicesIterator {
                     // Remove tail of the list.
                     incrementedCpIndex = i;
                     for (int j = choicePoints.size() - 1; j >= i; j--) {
-                        doneEvaluating(choicePoints.get(j).bestScoreForChoice);
+                        popChoicePoint(choicePoints.get(j));
                     }
                     choicePoints.subList(i + 1, choicePoints.size()).clear();
                     return true;
                 }
             }
             for (int i = choicePoints.size() - 1; i >= 0; i--) {
-                doneEvaluating(choicePoints.get(i).bestScoreForChoice);
+                popChoicePoint(choicePoints.get(i));
             }
             choicePoints.clear();
         }
@@ -236,6 +242,13 @@ public class SpellAbilityChoicesIterator {
             evalDepth = 0;
         }
         return false;
+    }
+
+    private void popChoicePoint(ChoicePoint cp) {
+        if (cp.open) {
+            doneEvaluating(cp.bestScoreForChoice);
+            cp.open = false;
+        }
     }
 
     private void doneEvaluating(Score bestScore) {
