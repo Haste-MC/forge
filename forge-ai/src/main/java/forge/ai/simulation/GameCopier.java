@@ -19,7 +19,9 @@ import forge.game.combat.Combat;
 import forge.game.mana.Mana;
 import forge.game.phase.PhaseHandler;
 import forge.game.phase.PhaseType;
+import forge.game.player.GameLossReason;
 import forge.game.player.Player;
+import forge.game.player.PlayerOutcome;
 import forge.game.player.RegisteredPlayer;
 import forge.game.replacement.ReplacementEffect;
 import forge.game.spellability.SpellAbility;
@@ -87,8 +89,11 @@ public class GameCopier {
         Game newGame = new Game(newPlayers, currentRules, newMatch);
         newGame.dangerouslySetTimestamp(origGame.getTimestamp());
 
-        for (int i = 0; i < origGame.getPlayers().size(); i++) {
-            Player origPlayer = origGame.getPlayers().get(i);
+        // Map every registered player, not just the ones still in the game: a player who
+        // already lost is still referenced by game objects (the defender of the current
+        // combat, remembered/chosen players, the active player when they lost during their
+        // own turn) and the copy would otherwise fail with "Couldn't map <player>".
+        for (Player origPlayer : origGame.getRegisteredPlayers()) {
             Player newPlayer = newGame.getPlayer(origPlayer.getId());
             newPlayer.setTeam(origPlayer.getTeam());
             newPlayer.setLife(origPlayer.getLife(), null);
@@ -118,6 +123,9 @@ public class GameCopier {
                 newPlayer.getManaPool().addManaNoEvent(m);
             }
             playerMap.put(origPlayer, newPlayer);
+            if (origPlayer.hasLost()) {
+                markAsLost(newGame, newPlayer, origPlayer.getOutcome());
+            }
         }
 
         PhaseHandler origPhaseHandler = origGame.getPhaseHandler();
@@ -209,6 +217,21 @@ public class GameCopier {
                 newGame.getStack().add(newSa);
             }
         } 
+    }
+
+    /**
+     * Reproduces a lost player in the copy: same outcome, removed from the in-game
+     * players. Runs before any card is copied, so the usual leave-the-game cleanup in
+     * {@link Game#onPlayerLost(Player)} has nothing to do beyond the bookkeeping.
+     */
+    private static void markAsLost(Game newGame, Player newPlayer, PlayerOutcome outcome) {
+        if (outcome.lossState == GameLossReason.Conceded) {
+            newPlayer.concede();
+        } else {
+            // no replacement effects exist in the empty copy, so this always records the loss
+            newPlayer.loseConditionMet(outcome.lossState, outcome.loseConditionSpell);
+        }
+        newGame.onPlayerLost(newPlayer);
     }
 
     private RegisteredPlayer clonePlayer(RegisteredPlayer p) {
