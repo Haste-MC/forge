@@ -27,6 +27,9 @@ public class SpellAbilityPicker {
     private Game game;
     private Player player;
     private Score bestScore;
+    // -Dforge.ai.sim.debug=true prints every top-level decision (phase, hand, candidate scores,
+    // chosen plan) to stdout. Recursive pickers inside a simulation stay silent.
+    private static final boolean PRINT_TOP_LEVEL = Boolean.getBoolean("forge.ai.sim.debug");
     private boolean printOutput = false;
     private SpellAbilityChoicesIterator interceptor;
 
@@ -53,7 +56,8 @@ public class SpellAbilityPicker {
         if (!game.getPhaseHandler().isPlayerTurn(player)) {
             phaseStr = "opponent " + phaseStr;
         }
-        print("---- choose ability  (phase = " + phaseStr + ")");
+        print("---- choose ability  (phase = " + phaseStr + ", turn = " + game.getPhaseHandler().getTurn() + ")");
+        print("  hand: " + player.getCardsIn(ZoneType.Hand));
     }
 
     public List<SpellAbility> getCandidateSpellsAndAbilities() {
@@ -101,7 +105,7 @@ public class SpellAbilityPicker {
     }
 
     public SpellAbility chooseSpellAbilityToPlay(SimulationController controller) {
-        //printOutput = controller == null;
+        printOutput = PRINT_TOP_LEVEL && controller == null;
 
         // Pass if top of stack is owned by me.
         if (!game.getStack().isEmpty() && game.getStack().peekAbility().getActivatingPlayer().equals(player)) {
@@ -214,6 +218,7 @@ public class SpellAbilityPicker {
             }
             numEvaluated++;
             Score value = evaluateSa(controller, phase, candidateSAs, i);
+            print("  " + abilityToString(candidateSAs.get(i)) + " -> " + value);
             if (value.value > bestSaValue.value) {
                 bestSaValue = value;
                 bestSa = candidateSAs.get(i);
