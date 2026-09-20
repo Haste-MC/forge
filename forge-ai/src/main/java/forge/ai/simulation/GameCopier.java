@@ -141,9 +141,16 @@ public class GameCopier {
 
         for (Player origPlayer : playerMap.keySet()) {
             Player newPlayer = playerMap.get(origPlayer);
-            origPlayer.copyCommandersToSnapshot(newPlayer, gameObjectMap::map);
-            origPlayer.copyEffectCardsToSnapshot(newPlayer, gameObjectMap::map);
             ((PlayerZoneBattlefield) newPlayer.getZone(ZoneType.Battlefield)).setTriggers(true);
+            if (origPlayer.hasLost()) {
+                // Everything a player who left the game owned has ceased to exist (CR 800.4a);
+                // Player.commanders and the effect-card fields still point at those objects.
+                continue;
+            }
+            // A commander that ceased to exist (its owner left the game) has no copy; the
+            // snapshot skips it (a survivor's commander damage from it) instead of failing.
+            origPlayer.copyCommandersToSnapshot(newPlayer, this::findCopiedCard);
+            origPlayer.copyEffectCardsToSnapshot(newPlayer, gameObjectMap::map);
         }
         newGame.getTriggerHandler().clearSuppression(TriggerType.ChangesZone);
 
@@ -600,6 +607,11 @@ public class GameCopier {
             throw new RuntimeException("Couldn't map " + o + "/" + System.identityHashCode(o));
         return result;
     }
+    /** The copy of {@code c}, or null if the card was not part of the copy (unlike {@link #find}, no exception). */
+    private Card findCopiedCard(Card c) {
+        return cardMap.get(c);
+    }
+
     public GameObject reverseFind(GameObject o) {
         if (origGame.EXPERIMENTAL_RESTORE_SNAPSHOT) {
             return snapshot.reverseFind(o);
