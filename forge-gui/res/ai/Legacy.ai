@@ -1,9 +1,11 @@
+# Legacy: the Default profile with the previous mulligan heuristic (lands and mana values only, no color check).
+# Kept as a reference for benchmarking MULLIGAN_CHECK_COLORS; play with Default instead.
 # The amount of cards at which to stop considering mulligan
 MULLIGAN_THRESHOLD=4
 # When enabled, the AI mulligans hands whose lands cannot cast any spell with mana value 3 or less (checking
 # colored pips and the commander's color identity) and bottoms uncastable cards first in a London mulligan.
 # When disabled, hand evaluation only counts lands and mana values.
-MULLIGAN_CHECK_COLORS=true
+MULLIGAN_CHECK_COLORS=false
 
 # Aggro preferences (enabling these will generally make the AI attack more aggressively into potential trades)
 # If the following option is enabled, the AI will generally play aggressively, seeking trades on offense when possible
