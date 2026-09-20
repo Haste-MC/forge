@@ -204,6 +204,17 @@ public class GameStateEvaluator {
         return new Score(score, availableScore);
     }
 
+    // Mana base weights. Together with evaluateLand (100 per mana produced) the old 100 per source made a
+    // plain land worth about as much as a three-mana creature, so the simulation preferred a land drop or
+    // a mana rock over developing the board. A source now counts 60 up to the mana the deck actually
+    // curves out at; beyond that (or beyond the deck's top cost) extra sources are nearly worthless.
+    // Commander decks usually have one or two very expensive cards, so the deck maximum alone would keep
+    // the eighth land as valuable as the fourth - hence the cap.
+    private static final int MANA_SOURCE_VALUE = 60;
+    private static final int EXCESS_MANA_SOURCE_VALUE = 5;
+    private static final int MANA_CURVE_CAP = 6;
+    private static final int COLOR_PIP_VALUE = 40;
+
     private int evalManaBase(Player player, AiDeckStatistics statistics, boolean includeNormalPhasing) {
         // TODO should these be fixed quantities or should they be linear out of like 1000/(desired - total)?
         int value = 0;
@@ -238,14 +249,15 @@ public class GameStateEvaluator {
         // Compare against the maximums in the deck and in the hand
         // TODO check number of castable cards in hand
         for (int i = 0; i < counts.length; i++) {
-            // for each color pip, add 100
-            value += Math.min(counts[i], statistics.maxPips[i]) * 100;
+            // for each color pip the deck needs and we can produce
+            value += Math.min(counts[i], statistics.maxPips[i]) * COLOR_PIP_VALUE;
         }
-        // value for being able to cast all the cards in your deck
-        value += min(max_total, statistics.maxCost) * 100;
+        // value for being able to cast the cards in your deck, up to the curve cap
+        int neededMana = min(statistics.maxCost, MANA_CURVE_CAP);
+        value += min(max_total, neededMana) * MANA_SOURCE_VALUE;
 
         // excess mana is valued less than getting enough to use everything
-        value += max(0, max_total - statistics.maxCost) * 5;
+        value += max(0, max_total - neededMana) * EXCESS_MANA_SOURCE_VALUE;
 
         return value;
     }
