@@ -115,18 +115,6 @@ public class GameStateEvaluator {
         return getScoreForGameStateImpl(game, aiPlayer);
     }
 
-    // A card in hand used to be worth 5 (1, plus 4 if it survives the discard step), a cast two-drop
-    // about 130: card advantage barely registered, so the simulation cashed in cantrips and card draw
-    // for nothing and never held a card back. Now 12 for a card that can be kept, 4 for one that will
-    // be discarded to hand size anyway. Opponents' cards count the same, a card is a card.
-    private static final int HAND_CARD_VALUE = 4;
-    private static final int HAND_CARD_KEEPABLE_VALUE = 8;
-
-    private static int evalHand(Player player, int cards) {
-        int fullValueCards = player.isUnlimitedHandSize() ? cards : min(cards, player.getMaxHandSize());
-        return HAND_CARD_VALUE * cards + HAND_CARD_KEEPABLE_VALUE * fullValueCards;
-    }
-
     private Score getScoreForGameStateImpl(Game game, Player aiPlayer) {
         // TODO: try and reuse evaluateBoardPosition
         int score = 0;
@@ -141,12 +129,14 @@ public class GameStateEvaluator {
         for (Player player : game.getPlayers()) {
             int cards = player.getCardsIn(ZoneType.Hand).size();
             if (player.isOpponentOf(aiPlayer)) {
-                score -= evalHand(player, cards);
+                score -= 4 * cards;
                 opponentCards += cards;
                 opponentLife += player.getLife();
                 debugPrint("  Opponent " + (++opponents) + " life: -" + player.getLife());
             } else {
-                score += evalHand(player, cards);
+                int fullValueCards = player.isUnlimitedHandSize()
+                        ? cards : min(cards, player.getMaxHandSize());
+                score += cards + 4 * fullValueCards;
                 teamLife += player.getLife();
                 teamPlayers++;
                 if (player == aiPlayer) {
