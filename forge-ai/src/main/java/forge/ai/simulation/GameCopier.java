@@ -143,11 +143,11 @@ public class GameCopier {
             if (origCard.hasRemembered()) {
                 for (Object o : origCard.getRemembered()) {
                     if (o instanceof GameObject) {
-                        // Sometimes, a spell can "remember" a card that was not copied - for
-                        // example Swords to Plowshares remembering its target for LKI (no zone),
-                        // or a token that left the battlefield: Zone.add only lists tokens on the
-                        // battlefield, so its Card.getZone() is set even though it's in no zone.
-                        // Skip these to not crash in find().
+                        // Sometimes, a spell can "remember" a card that was not copied for some
+                        // reason: an LKI copy (no zone), a token that left the battlefield
+                        // (Zone.add only lists tokens on the battlefield, so its Card.getZone()
+                        // stays set even though it's in no zone), or a card left behind in the
+                        // sideboard. Skip these to not crash in find().
                         if (o instanceof Card && !cardMap.containsKey(o)) {
                             continue;
                         }
