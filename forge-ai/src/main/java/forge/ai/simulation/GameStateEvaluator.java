@@ -262,6 +262,12 @@ public class GameStateEvaluator {
         return value;
     }
 
+    // A non-creature permanent is worth a base plus a share per mana spent on it. The share has to
+    // outweigh clearly what casting it costs in the evaluation: the card in hand and the mana
+    // that could have gone elsewhere. 40 + 35 per mana keeps a five-drop (215) near a 5/5 creature.
+    private static final int PERMANENT_BASE_VALUE = 40;
+    private static final int PERMANENT_VALUE_PER_MANA = 35;
+
     public int evalCard(Game game, Player aiPlayer, Card c) {
         // TODO: These should be based on other considerations - e.g. in relation to opponents state.
         if (c.isCreature()) {
@@ -277,8 +283,8 @@ public class GameStateEvaluator {
             return 0;
         }
         // TODO treat cards like Captive Audience negative
-        // e.g. a 5 CMC permanent results in 200, whereas a 5/5 creature is ~225
-        int value = 50 + 30 * c.getCMC();
+        // e.g. a 5 CMC permanent results in 215, whereas a 5/5 creature is ~225
+        int value = PERMANENT_BASE_VALUE + PERMANENT_VALUE_PER_MANA * c.getCMC();
         if (c.isPlaneswalker()) {
             value += 2 * c.getCounters(CounterEnumType.LOYALTY);
         }
