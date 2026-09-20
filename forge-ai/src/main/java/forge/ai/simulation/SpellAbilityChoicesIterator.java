@@ -194,8 +194,13 @@ public class SpellAbilityChoicesIterator {
             choicePoints.clear();
         }
         if (cachedTargetScores != null) {
+            // The target level is only open if chooseTargets() ran in the last simulation.
+            // It doesn't when the simulator bails out early (e.g. "SA not found" on the copy),
+            // and popping an unopened level would unbalance evalDepth.
+            if (!pushTarget) {
+                doneEvaluating(bestScoreForTarget);
+            }
             pushTarget = true;
-            doneEvaluating(bestScoreForTarget);
             bestScoreForTarget = new Score(Integer.MIN_VALUE);
             while (!outOfTime && nextTarget + 1 < cachedTargetScores.size()) {
                 nextTarget++;
@@ -207,7 +212,11 @@ public class SpellAbilityChoicesIterator {
             cachedTargetScores = null;
         }
         if (modeIterator != null) {
-            doneEvaluating(bestScoreForMode);
+            // Same guard for modes: advancedToNextMode is reset by chooseModesForAbility() when
+            // the level was actually pushed for the last simulation.
+            if (!advancedToNextMode) {
+                doneEvaluating(bestScoreForMode);
+            }
             bestScoreForMode = new Score(Integer.MIN_VALUE);
             if (!outOfTime && modeIterator.hasNext()) {
                 selectedModes = remapModes(modeIterator.next());
@@ -218,7 +227,13 @@ public class SpellAbilityChoicesIterator {
         }
 
         if (evalDepth != 0) {
-            throw new RuntimeException("" + evalDepth);
+            // A bookkeeping imbalance must not take the whole game down with it: report it and
+            // rebalance the controller's score stack so the outer evaluation can continue.
+            System.err.println("SpellAbilityChoicesIterator: unbalanced evalDepth " + evalDepth);
+            while (evalDepth > 0) {
+                doneEvaluating(new Score(Integer.MIN_VALUE));
+            }
+            evalDepth = 0;
         }
         return false;
     }
