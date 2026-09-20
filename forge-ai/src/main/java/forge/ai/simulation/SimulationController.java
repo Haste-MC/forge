@@ -110,6 +110,12 @@ public class SimulationController {
     }
 
     public void doneEvaluating(Score score) {
+        if (getLastDecision() == null) {
+            // Nothing to pop: the caller's push/pop bookkeeping is off. Don't take the game down
+            // over it; the iterator reports and rebalances such cases itself.
+            System.err.println("SimulationController.doneEvaluating without an open decision");
+            return;
+        }
         // if we're here during a deeper level this hasn't been called for the level above yet
         // in such case we need to check that this decision has really lead to the improvement in score
         if (getLastDecision().initialScore.value < score.value && score.value > bestScore.value) {
