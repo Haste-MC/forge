@@ -355,7 +355,8 @@ public class ChooseCardAi extends SpellAbilityAi {
      * attack can't block it profitably (evaluated with the +1/+1 counters the chain puts on it).
      */
     private static boolean goadIsAcceptable(final Player ai, final SpellAbility sa, final Card c, final Player goader) {
-        if (!c.isCreature()) {
+        if (!c.isCreature() || !c.getController().equals(ai)) {
+            // Goading someone else's creature is never a drawback for the chooser.
             return true;
         }
         final Card copy = CardCopyService.getLKICopy(c);
