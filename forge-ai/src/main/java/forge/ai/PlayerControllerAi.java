@@ -775,6 +775,9 @@ public class PlayerControllerAi extends PlayerController {
 
     @Override
     public CardCollectionView tuckCardsViaMulligan(CardCollectionView hand, int cardsToReturn) {
+        if (getAi().getBoolProperty(AiProps.MULLIGAN_CHECK_COLORS)) {
+            return tuckCardsByPlayability(hand, cardsToReturn);
+        }
         // TODO This is better than it was before, but still suboptimal (but fast).
         // Maybe score a bunch of hands based on projected hand size and return the "duds"
         int numLandsDesired = (player.getStartingHandSize() - cardsToReturn) / 2;
@@ -815,6 +818,58 @@ public class PlayerControllerAi extends PlayerController {
         }
 
         return CardCollection.getView(toReturn);
+    }
+
+    /**
+     * London mulligan: bottom the cards the kept hand can use least, one at a time, see
+     * {@link ComputerUtil#mulliganBottomRank}. Among excess lands, keep the ones the remaining spells need for their
+     * colors; ties go to {@link ComputerUtilCard#getWorstLand}.
+     */
+    private CardCollectionView tuckCardsByPlayability(CardCollectionView hand, int cardsToReturn) {
+        final int landsWanted = (hand.size() - cardsToReturn) / 2 + 1;
+        final CardCollection remaining = new CardCollection(hand);
+        final CardCollection toReturn = new CardCollection();
+        for (int i = 0; i < cardsToReturn && !remaining.isEmpty(); i++) {
+            final CardCollection lands = CardLists.filter(remaining, CardPredicates.LANDS);
+            final CardCollection spells = CardLists.filter(remaining, CardPredicates.NON_LANDS);
+            final byte colors = ComputerUtil.colorsProducedBy(lands, player);
+            final boolean excessLand = lands.size() > landsWanted;
+            Card worst = null;
+            int worstRank = Integer.MIN_VALUE;
+            for (final Card c : remaining) {
+                final int rank = ComputerUtil.mulliganBottomRank(c, colors, excessLand);
+                if (rank > worstRank) {
+                    worst = c;
+                    worstRank = rank;
+                }
+            }
+            if (worst.isLand()) {
+                worst = leastNeededLand(lands, spells);
+            }
+            toReturn.add(worst);
+            remaining.remove(worst);
+        }
+        return CardCollection.getView(toReturn);
+    }
+
+    /** The land whose colors the fewest of the given spells depend on; ties broken by the generic land evaluation. */
+    private Card leastNeededLand(final CardCollection lands, final CardCollection spells) {
+        int bestCovered = -1;
+        final CardCollection candidates = new CardCollection();
+        for (final Card land : lands) {
+            final CardCollection others = new CardCollection(lands);
+            others.remove(land);
+            final byte colorsWithout = ComputerUtil.colorsProducedBy(others, player);
+            final int covered = CardLists.count(spells, c -> ComputerUtil.coloredPipsCovered(c.getManaCost(), colorsWithout));
+            if (covered > bestCovered) {
+                bestCovered = covered;
+                candidates.clear();
+            }
+            if (covered == bestCovered) {
+                candidates.add(land);
+            }
+        }
+        return ComputerUtilCard.getWorstLand(candidates);
     }
 
     @Override

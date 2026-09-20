@@ -27,6 +27,8 @@ import forge.card.CardType;
 import forge.card.ColorSet;
 import forge.card.MagicColor;
 import forge.card.mana.ManaAtom;
+import forge.card.mana.ManaCost;
+import forge.card.mana.ManaCostShard;
 import forge.game.*;
 import forge.game.ability.AbilityKey;
 import forge.game.ability.AbilityUtils;
@@ -44,6 +46,7 @@ import forge.game.player.Player;
 import forge.game.replacement.ReplacementEffect;
 import forge.game.replacement.ReplacementLayer;
 import forge.game.replacement.ReplacementType;
+import forge.game.spellability.AbilityManaPart;
 import forge.game.spellability.AbilitySub;
 import forge.game.spellability.SpellAbility;
 import forge.game.spellability.SpellAbilityStackInstance;
@@ -2205,9 +2208,24 @@ public class ComputerUtil {
             score += 10;
         }
 
-        final CardCollectionView castables = CardLists.filter(handList, c -> c.getManaCost().getCMC() <= 0 || c.getManaCost().getCMC() <= landSize);
-
-        score += castables.size() * 2;
+        final boolean checkColors = aic.getBoolProperty(AiProps.MULLIGAN_CHECK_COLORS);
+        boolean noEarlyPlays = false;
+        if (checkColors) {
+            // A spell is playable only if the lands in hand can pay for its colored pips as well as its total cost
+            final byte colors = colorsProducedBy(lands, ai);
+            final CardCollectionView playables = CardLists.filter(handList, c -> !c.isLand() && c.getManaCost().getCMC() <= landSize
+                    && coloredPipsCovered(c.getManaCost(), colors));
+            final int earlyPlays = CardLists.count(playables, c -> c.getManaCost().getCMC() <= EARLY_PLAY_CMC);
+            score += playables.size() * 2;
+            // Reward a curve: at least two cheap plays the hand can actually cast
+            if (earlyPlays >= 2) {
+                score += 4;
+            }
+            noEarlyPlays = earlyPlays == 0;
+        } else {
+            final CardCollectionView castables = CardLists.filter(handList, c -> c.getManaCost().getCMC() <= 0 || c.getManaCost().getCMC() <= landSize);
+            score += castables.size() * 2;
+        }
 
         // Improve score for perceived mana efficiency of the hand
 
@@ -2238,9 +2256,104 @@ public class ComputerUtil {
                 return handSize;
             }
             return 0;
+        } else if (noEarlyPlays) {
+            // BAD Hands - lands, but nothing cheap the lands can cast (wrong colors or no curve): as bad as 0/1 lands
+            if (library.size()/landsInDeck > 6) {
+                // Heavy spell deck it's ok
+                return handSize;
+            }
+            return 0;
         }
         return score;
     }
+
+    /** Spells up to this mana value count as early plays when judging the curve of an opening hand. */
+    private static final int EARLY_PLAY_CMC = 3;
+
+    /**
+     * Colors (as a {@link MagicColor} mask) that the given lands (and free mana artifacts) could produce, judged by
+     * their mana abilities: "any color" counts for every color, reflected mana is treated as any color (nothing is on
+     * the battlefield yet), mana whose color depends on a choice made later is ignored. When the player has a
+     * commander, only colors of the commander's color identity count - a land that produces none of them does not
+     * help cast the deck's spells.
+     */
+    public static byte colorsProducedBy(final Iterable<Card> lands, final Player ai) {
+        byte colors = 0;
+        for (final Card land : lands) {
+            colors |= colorsProducedBy(land);
+        }
+        final ColorSet identity = ai.getCommanderColorID();
+        if (identity != null) {
+            colors &= identity.getColor();
+        }
+        return colors;
+    }
+
+    private static byte colorsProducedBy(final Card land) {
+        byte colors = 0;
+        for (final SpellAbility ma : land.getManaAbilities()) {
+            if (ma.getApi() == ApiType.ManaReflected) {
+                return MagicColor.ALL_COLORS;
+            }
+            final AbilityManaPart mp = ma.getManaPart();
+            if (mp == null) {
+                continue;
+            }
+            if (mp.isAnyMana()) {
+                return MagicColor.ALL_COLORS;
+            }
+            if (mp.isSpecialMana()) {
+                // depends on a choice or on the board, unknown at this point
+                continue;
+            }
+            for (final byte color : MagicColor.WUBRG) {
+                if (mp.canProduce(MagicColor.toShortString(color), ma)) {
+                    colors |= color;
+                }
+            }
+        }
+        return colors;
+    }
+
+    /**
+     * Whether every colored pip of the cost can be paid with mana of the given colors. Generic, colorless, snow and
+     * X pips are ignored (any land pays them), Phyrexian pips can be paid with life, hybrid pips need one of their
+     * colors, "2 or color" pips can be paid with generic mana.
+     */
+    public static boolean coloredPipsCovered(final ManaCost cost, final byte colors) {
+        for (final ManaCostShard shard : cost) {
+            final byte mask = shard.getColorMask();
+            if (mask == 0 || shard.isPhyrexian() || shard.isOr2Generic()) {
+                continue;
+            }
+            if ((mask & colors) == 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * How badly a card wants to go to the bottom during a London mulligan, higher is worse: a spell whose colored pips
+     * the lands in hand cannot pay, then any spell with mana value 6 or more, then a land beyond the number the final
+     * hand wants, then the remaining cards by mana value.
+     */
+    public static int mulliganBottomRank(final Card c, final byte colors, final boolean excessLand) {
+        final int cmc = c.getManaCost().getCMC();
+        if (c.isLand()) {
+            return excessLand ? 2 * BOTTOM_RANK_STEP : 0;
+        }
+        if (!coloredPipsCovered(c.getManaCost(), colors)) {
+            return 4 * BOTTOM_RANK_STEP + cmc;
+        }
+        if (cmc >= 6) {
+            return 3 * BOTTOM_RANK_STEP + cmc;
+        }
+        return cmc;
+    }
+
+    /** Gap between the tiers of {@link #mulliganBottomRank}, larger than any mana value. */
+    private static final int BOTTOM_RANK_STEP = 100;
 
     // Computer mulligans if there are no cards with converted mana cost of 0 in its hand
     public static boolean wantMulligan(Player ai, int cardsToReturn) {
