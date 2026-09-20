@@ -6,6 +6,7 @@ import forge.ai.AIOption;
 import forge.ai.LobbyPlayerAi;
 import forge.card.CardRarity;
 import forge.card.CardRules;
+import forge.card.CardStateName;
 import forge.card.CardType;
 import forge.game.*;
 import forge.game.ability.effects.DetachedCardEffect;
@@ -280,6 +281,14 @@ public class GameCopier {
             }
             // TODO CardsAddedThisTurn is now messed up
         }
+        // The back half of a meld sits in the battlefield's melded collection, not in its card
+        // list, so the zone walk above never sees it. Without it the copied front half is in the
+        // Meld state with no partner, and Card.getCMC() dies on the first evaluation of the copy.
+        for (Player p : origGame.getPlayers()) {
+            for (Card melded : ((PlayerZoneBattlefield) p.getZone(ZoneType.Battlefield)).getMeldedCards()) {
+                copyMeldPartner(newGame, melded, aiPlayer);
+            }
+        }
         gameObjectMap = new CopiedGameObjectMap(newGame);
 
         for (Card card : origGame.getCardsIn(ZoneType.Battlefield)) {
@@ -311,12 +320,44 @@ public class GameCopier {
             if (card.isPaired()) {
                 otherCard.setPairedWith(cardMap.get(card.getPairedWith()));
             }
+            if (card.getMeldedWith() != null) {
+                // GameAction keeps the link after the meld broke up (both halves in the graveyard,
+                // maybe back in play on their own), so only a permanent in the Meld state gets a
+                // partner conjured up; otherwise the link maps like any other, or is dropped.
+                Card partner = cardMap.get(card.getMeldedWith());
+                if (partner == null && card.getCurrentStateName() == CardStateName.Meld) {
+                    partner = copyMeldPartner(newGame, card.getMeldedWith(), aiPlayer);
+                }
+                otherCard.setMeldedWith(partner);
+            }
             if (card.getCopiedPermanent() != null) {
                 // TODO would it be safe to simply reuse the prototype?
                 otherCard.setCopiedPermanent(new CardCopyService(card.getCopiedPermanent()).copyCard(false));
             }
             // TODO: Verify that the above relationships are preserved bi-directionally or not.
         }
+    }
+
+    /**
+     * Maps the back half of a meld into the copied game. It is copied on first sight and filed in
+     * its controller's battlefield the way {@link forge.game.ability.effects.MeldEffect} does
+     * (melded collection, zone set to the battlefield), so that the copied front half leaving the
+     * battlefield spins it off the same as in the original game.
+     */
+    private Card copyMeldPartner(Game newGame, Card partner, Player aiPlayer) {
+        Card newPartner = cardMap.get(partner);
+        if (newPartner != null) {
+            return newPartner;
+        }
+        newPartner = createCardCopy(newGame, playerMap.get(partner.getOwner()), partner, aiPlayer);
+        cardMap.put(partner, newPartner);
+        Player holder = partner.getZone() != null && partner.getZone().getPlayer() != null
+                ? partner.getZone().getPlayer() : partner.getOwner();
+        PlayerZoneBattlefield battlefield = (PlayerZoneBattlefield) playerMap.get(holder).getZone(ZoneType.Battlefield);
+        newPartner.setZone(battlefield);
+        battlefield.addToMelded(newPartner);
+        newPartner.setGameTimestamp(partner.getGameTimestamp());
+        return newPartner;
     }
 
     private static PaperCard hidden_info_card = new PaperCard(CardRules.fromScript(Lists.newArrayList("Name:hidden", "Types:Artifact", "Oracle:")), "", CardRarity.Common);
