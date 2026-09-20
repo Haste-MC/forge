@@ -110,7 +110,9 @@ public class TokenAi extends SpellAbilityAi {
                 && sa.getSubAbility().getApi() == ApiType.DelayedTrigger;
         boolean isCreature = actualToken.isCreature();
 
-        // Don't generate tokens without haste before main 2 if possible
+        // Don't generate tokens without haste before main 2 if possible: the mana is better spent on
+        // spells first. castSpellInMain1 lists the exceptions, among them abilities that fill the
+        // graveyard for a meld the AI can complete (the token is a side effect there).
         if (ph.getPhase().isBefore(PhaseType.MAIN2) && ph.isPlayerTurn(ai) && !haste && !sa.hasParam("ActivationPhases")
                 && !ComputerUtil.castSpellInMain1(ai, sa)) {
             boolean buff = false;
@@ -204,6 +206,12 @@ public class TokenAi extends SpellAbilityAi {
             }
             // if the token can't block, then what's the point?
             return new AiAbilityDecision(0, AiPlayDecision.DoesntImpactCombat);
+        }
+
+        // The chance roll spreads token making over the game; a token that is the side effect of
+        // filling the graveyard for a meld the AI can complete is not worth skipping a turn on.
+        if (ComputerUtil.worksTowardMeld(ai, sa)) {
+            return new AiAbilityDecision(100, AiPlayDecision.WillPlay);
         }
 
         if (MyRandom.getRandom().nextFloat() <= chance) {

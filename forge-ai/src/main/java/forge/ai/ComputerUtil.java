@@ -56,6 +56,7 @@ import forge.game.trigger.WrappedAbility;
 import forge.game.zone.Zone;
 import forge.game.zone.ZoneType;
 import forge.util.Aggregates;
+import forge.util.Expressions;
 import forge.util.MyRandom;
 import forge.util.StreamUtil;
 import forge.util.collect.FCollection;
@@ -1302,6 +1303,12 @@ public class ComputerUtil {
             return true;
         }
 
+        // Filling the graveyard for a meld the AI can complete is worth doing before combat:
+        // the meld checks at the next upkeep, so every land in the graveyard by then counts.
+        if (worksTowardMeld(ai, sa)) {
+            return true;
+        }
+
         if (sub != null) {
             final ApiType api = sub.getApi();
             if (ApiType.Encode == api && !ai.getCreaturesInPlay().isEmpty()) {
@@ -1354,6 +1361,93 @@ public class ComputerUtil {
             return castSpellInMain1(ai, sub);
         }
 
+        return false;
+    }
+
+    /**
+     * Whether activating the ability moves the AI toward a meld it can complete: the AI owns and
+     * controls a permanent whose meld trigger has a {@code CheckSVar} condition counting land cards in
+     * its graveyard that is not yet met, it also controls the meld partner (the trigger's
+     * {@code Secondary}, i.e. the card's {@code MeldPair}), and the ability puts the AI's own cards into
+     * the graveyard - milling itself or sacrificing a land as a cost. Purely script-driven, no card names.
+     */
+    public static boolean worksTowardMeld(final Player ai, final SpellAbility sa) {
+        if (ai == null || sa == null || sa.getHostCard() == null) {
+            return false;
+        }
+        if (!fillsOwnGraveyardWithLands(ai, sa)) {
+            return false;
+        }
+        for (final Card c : ai.getCardsIn(ZoneType.Battlefield)) {
+            if (!c.getOwner().equals(ai) || c.isToken()) {
+                continue;
+            }
+            for (final Trigger t : c.getTriggers()) {
+                if (!t.hasParam("CheckSVar")) {
+                    continue;
+                }
+                final SpellAbility meld = findMeldAbility(t.ensureAbility());
+                if (meld == null) {
+                    continue;
+                }
+                // the condition has to count lands in the AI's graveyard
+                final String var = t.getParam("CheckSVar");
+                final String expr = t.getSVar(var);
+                if (!expr.startsWith("Count$ValidGraveyard") || !expr.contains("Land")) {
+                    continue;
+                }
+                final String comparator = t.getParamOrDefault("SVarCompare", "GE1");
+                final int have = AbilityUtils.calculateAmount(c, var, t);
+                final int need = AbilityUtils.calculateAmount(c, comparator.substring(2), t);
+                if (Expressions.compare(have, comparator.substring(0, 2), need)) {
+                    continue; // already met, the meld only waits for the trigger
+                }
+                // the other half must be there as well, owned and controlled like MeldEffect requires
+                final String partnerName = meld.getParamOrDefault("Secondary", c.getRules() == null ? "" : c.getRules().getMeldWith());
+                if (partnerName.isEmpty()) {
+                    continue;
+                }
+                CardCollection partners = CardLists.filter(ai.getCardsIn(ZoneType.Battlefield),
+                        CardPredicates.isOwner(ai), CardPredicates.nameEquals(partnerName));
+                partners = CardLists.getType(partners, meld.getParamOrDefault("SecondaryType", "Creature"));
+                if (!partners.isEmpty()) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static SpellAbility findMeldAbility(SpellAbility sa) {
+        for (; sa != null; sa = sa.getSubAbility()) {
+            if (sa.getApi() == ApiType.Meld) {
+                return sa;
+            }
+        }
+        return null;
+    }
+
+    /** Self-mill anywhere in the ability chain, or a cost that sacrifices a land other than the source. */
+    private static boolean fillsOwnGraveyardWithLands(final Player ai, final SpellAbility sa) {
+        for (SpellAbility part = sa; part != null; part = part.getSubAbility()) {
+            if (part.getApi() == ApiType.Mill && !part.usesTargeting()
+                    && "You".equals(part.getParamOrDefault("Defined", "You"))
+                    && !ai.getCardsIn(ZoneType.Library).isEmpty()) {
+                return true;
+            }
+        }
+        final Cost cost = sa.getPayCosts();
+        if (cost == null) {
+            return false;
+        }
+        for (final CostPart part : cost.getCostParts()) {
+            if (part instanceof CostSacrifice && !part.payCostFromSource() && part.getType() != null) {
+                final String type = part.getType().split("[.+]", 2)[0];
+                if ("Land".equals(type) || CardType.isALandType(type)) {
+                    return true;
+                }
+            }
+        }
         return false;
     }
 
