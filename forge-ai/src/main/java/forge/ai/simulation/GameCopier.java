@@ -480,6 +480,11 @@ public class GameCopier {
             if (c.isSuspected()) {
                 newCard.setSuspected(true);
             }
+            // Goad is neither a keyword nor a static ability: without it the copied
+            // creature is free to stay home while the real one has to attack.
+            for (Map.Entry<Long, Player> e : c.getGoadMap().entrySet()) {
+                newCard.addGoad(e.getKey(), playerMap.get(e.getValue()));
+            }
             if (c.isPlaneswalker()) {
                 for (SpellAbility sa : c.getAllSpellAbilities()) {
                     int active = sa.getActivationsThisTurn();
