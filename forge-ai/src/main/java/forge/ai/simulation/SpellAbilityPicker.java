@@ -82,6 +82,12 @@ public class SpellAbilityPicker {
             writeIndex++;
         }
         candidateSAs.subList(writeIndex, candidateSAs.size()).clear();
+        // Evaluate the most promising candidates first, like the rule-based AI does: with a
+        // decision time budget the search may stop after only a few candidates, and without a
+        // sort the first ones are simply whatever came out of getAvailableCards (often lands
+        // and cheap cantrips). Ties on simulated score also resolve towards the better spell.
+        candidateSAs.sort(ComputerUtilAbility.saEvaluator);
+        ComputerUtilAbility.sortCreatureSpells(candidateSAs);
         return candidateSAs;
     }
 
