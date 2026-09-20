@@ -7,7 +7,6 @@ import forge.ai.simulation.GameStateEvaluator.Score;
 import forge.game.Game;
 import forge.game.ability.ApiType;
 import forge.game.card.*;
-import forge.game.phase.PhaseHandler;
 import forge.game.phase.PhaseType;
 import forge.game.player.Player;
 import forge.game.spellability.AbilitySub;
@@ -220,9 +219,7 @@ public class SpellAbilityPicker {
         // Do it here on the best SA, rather than for all evaluations, so that if the best SA
         // is indeed a creature spell, we don't pick something else to play now and then have
         // no mana to play the truly best SA post-combat.
-        if (bestSa != null && bestSaValue.availableValue <= origGameScore.availableValue
-                && canHoldUntilMain2(bestSa)) {
-            print("Holding " + abilityToString(bestSa) + " until MAIN2");
+        if (bestSa != null && bestSaValue.availableValue <= origGameScore.availableValue) {
             bestSa = null;
         }
 
@@ -232,55 +229,6 @@ public class SpellAbilityPicker {
         print("BEST: " + abilityToString(bestSa) + " SCORE: " + bestSaValue.availableValue + " TIME: " + execTime + budgetNote);
         this.bestScore = bestSaValue;
         return bestSa;
-    }
-
-    /**
-     * Whether a play that only adds unavailable resources now (a summoning sick creature, a
-     * phased-out permanent) can safely wait for our second main phase. Holding it assumes the mana
-     * is still there after combat, which is not true when an attack trigger or an ability the rules
-     * AI activates during combat spends it: Fathom Fleet Captain's optional {2} took the mana Breeches
-     * was waiting for, and MAIN2 then cast a lesser spell instead. So hold only in our own first main
-     * phase (in every other phase the play is either not summoning sick by MAIN2 anyway or should not
-     * wait for an opponent's second main phase), and only when a copy of the game advanced through
-     * combat can still pay for the spell.
-     */
-    private boolean canHoldUntilMain2(SpellAbility sa) {
-        PhaseHandler ph = game.getPhaseHandler();
-        if (ph.getPhase() != PhaseType.MAIN1 || !ph.isPlayerTurn(player) || sa.isLandAbility()) {
-            return false;
-        }
-        GameCopier copier = new GameCopier(game);
-        Game afterCombat = copier.makeCopy(PhaseType.MAIN2, player);
-        Player playerCopy = (Player) copier.find(player);
-        if (afterCombat.isGameOver() || !playerCopy.isInGame()) {
-            // the outcome is settled in combat, nothing to hold the play for
-            return false;
-        }
-        Card hostCopy = (Card) copier.find(sa.getHostCard());
-        if (hostCopy == null) {
-            return false;
-        }
-        SpellAbility saCopy = findByDescription(hostCopy.getSpellAbilities(), sa.getDescription());
-        if (saCopy == null) {
-            return false;
-        }
-        saCopy.setActivatingPlayer(playerCopy);
-        return ComputerUtilMana.canPayManaCost(saCopy, playerCopy, 0, false);
-    }
-
-    /** The copy of a spell ability on the copied host card, matched like GameSimulator does. */
-    private static SpellAbility findByDescription(Iterable<SpellAbility> candidates, String desc) {
-        for (SpellAbility candidate : candidates) {
-            if (desc.equals(candidate.getDescription())) {
-                return candidate;
-            }
-        }
-        for (SpellAbility candidate : candidates) {
-            if (desc.startsWith(candidate.getDescription())) {
-                return candidate;
-            }
-        }
-        return null;
     }
 
     public boolean hasActivePlan() {
