@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 public class SpellAbilityPicker {
     private Game game;
@@ -105,8 +106,20 @@ public class SpellAbilityPicker {
         return getPlannedSpellAbility(origGameScore, candidateSAs);
     }
 
-    private Plan formulatePlanWithPhase(Score origGameScore, List<SpellAbility> candidateSAs, PhaseType phase) {
-        SimulationController controller = new SimulationController(origGameScore);
+    /**
+     * Computes the deadline for one top-level decision from the game's AI timeout.
+     * @return an absolute {@link System#nanoTime()} value, or {@link Long#MAX_VALUE} if the timeout is not positive
+     */
+    public static long deadlineFor(Game game) {
+        int timeoutSeconds = game.getAITimeout();
+        if (timeoutSeconds <= 0) {
+            return Long.MAX_VALUE;
+        }
+        return System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds);
+    }
+
+    private Plan formulatePlanWithPhase(Score origGameScore, List<SpellAbility> candidateSAs, PhaseType phase, long deadlineNanos) {
+        SimulationController controller = new SimulationController(origGameScore, SimulationController.DEFAULT_MAX_DEPTH, deadlineNanos);
         SpellAbility sa = chooseSpellAbilityToPlayImpl(controller, candidateSAs, origGameScore, phase);
         if (sa != null) {
             return controller.getBestPlan();
@@ -128,7 +141,10 @@ public class SpellAbilityPicker {
     private void createNewPlan(Score origGameScore, List<SpellAbility> candidateSAs) {
         plan = null;
 
-        Plan bestPlan = formulatePlanWithPhase(origGameScore, candidateSAs, null);
+        // One time budget for the whole decision: the plan for the current phase and the
+        // plan for after blockers share it, the latter only gets whatever is left.
+        long deadlineNanos = deadlineFor(game);
+        Plan bestPlan = formulatePlanWithPhase(origGameScore, candidateSAs, null, deadlineNanos);
         if (bestPlan == null) {
             print("No good plan at this time");
             return;
@@ -149,7 +165,7 @@ public class SpellAbilityPicker {
                 if (printOutput) {
                     System.err.println("Formula plan with phase bloom");
                 }
-                Plan afterBlockersPlan = formulatePlanWithPhase(origGameScore, candidateSAs2, PhaseType.COMBAT_DECLARE_BLOCKERS);
+                Plan afterBlockersPlan = formulatePlanWithPhase(origGameScore, candidateSAs2, PhaseType.COMBAT_DECLARE_BLOCKERS, deadlineNanos);
                 if (afterBlockersPlan != null && afterBlockersPlan.getFinalScore().value >= bestPlan.getFinalScore().value) {
                     printPlan(afterBlockersPlan, "After blockers");
                     print("Deciding to wait until after declare blockers.");
@@ -167,8 +183,15 @@ public class SpellAbilityPicker {
 
         SpellAbility bestSa = null;
         Score bestSaValue = origGameScore;
+        int numEvaluated = 0;
         print("Evaluating... (orig score = " + origGameScore +  ")");
         for (int i = 0; i < candidateSAs.size(); i++) {
+            // Always evaluate at least one candidate, so that the result is the best
+            // option seen so far rather than passing merely because time ran out.
+            if (i > 0 && controller.isOutOfTime()) {
+                break;
+            }
+            numEvaluated++;
             Score value = evaluateSa(controller, phase, candidateSAs, i);
             if (value.value > bestSaValue.value) {
                 bestSaValue = value;
@@ -186,7 +209,9 @@ public class SpellAbilityPicker {
         }
 
         long execTime = System.currentTimeMillis() - startTime;
-        print("BEST: " + abilityToString(bestSa) + " SCORE: " + bestSaValue.availableValue + " TIME: " + execTime);
+        String budgetNote = numEvaluated < candidateSAs.size()
+                ? " (time budget exhausted, " + numEvaluated + " of " + candidateSAs.size() + " candidates)" : "";
+        print("BEST: " + abilityToString(bestSa) + " SCORE: " + bestSaValue.availableValue + " TIME: " + execTime + budgetNote);
         this.bestScore = bestSaValue;
         return bestSa;
     }
