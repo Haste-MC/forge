@@ -206,8 +206,8 @@ public class GameStateEvaluator {
 
     // Mana base weights. Together with evaluateLand (100 per mana produced) the old 100 per source made a
     // plain land worth about as much as a three-mana creature, so the simulation preferred a land drop or
-    // a mana rock over developing the board. A source now counts 60 up to the mana the deck actually
-    // curves out at; beyond that (or beyond the deck's top cost) extra sources are nearly worthless.
+    // a mana rock over developing the board. A source now counts 60 up to the deck's highest mana value,
+    // capped at six; beyond that extra sources are nearly worthless.
     // Commander decks usually have one or two very expensive cards, so the deck maximum alone would keep
     // the eighth land as valuable as the fourth - hence the cap.
     private static final int MANA_SOURCE_VALUE = 60;
