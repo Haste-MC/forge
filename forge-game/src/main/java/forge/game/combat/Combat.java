@@ -57,6 +57,8 @@ import java.util.Map.Entry;
  * @version $Id$
  */
 public class Combat {
+    private static final String PLACEHOLDER_DEFENDER_NAME = "<Nothing>";
+
     private final Player playerWhoAttacks;
     private boolean legacyOrderCombatants;
     private AttackConstraints attackConstraints;
@@ -82,7 +84,7 @@ public class Combat {
     public Combat(Combat combat, IEntityMap map) {
         playerWhoAttacks = map.map(combat.playerWhoAttacks);
         for (GameEntity entry : combat.attackableEntries.get()) {
-            attackableEntries.get().add(map.map(entry));
+            attackableEntries.get().add(mapDefender(entry, map));
         }
 
         HashMap<AttackingBand, AttackingBand> bandsMap = new HashMap<>();
@@ -98,7 +100,7 @@ public class Combat {
                 newBand.setBlocked(blocked);
             }
             bandsMap.put(origBand, newBand);
-            attackedByBands.get().put(map.map(entry.getKey()), newBand);
+            attackedByBands.get().put(mapDefender(entry.getKey(), map), newBand);
         }
         for (Entry<AttackingBand, Card> entry : combat.blockedBands.get().entries()) {
             blockedBands.get().put(bandsMap.get(entry.getKey()), map.map(entry.getValue()));
@@ -112,10 +114,39 @@ public class Combat {
         }
         // Note: Doesn't currently set up lkiCache, since it's just a cache and not strictly needed...
         for (Table.Cell<Card, GameEntity, Integer> entry : combat.damageMap.get().cellSet()) {
-            damageMap.get().put(map.map(entry.getRowKey()), map.map(entry.getColumnKey()), entry.getValue());
+            damageMap.get().put(map.map(entry.getRowKey()), mapDefender(entry.getColumnKey(), map), entry.getValue());
         }
 
         attackConstraints = new AttackConstraints(this);
+    }
+
+    /**
+     * Creates the stand-in defender that keeps attackers in combat after the
+     * planeswalker or battle they were attacking left the battlefield (rule
+     * 506.4c workaround, see {@link #removeFromCombat(Card)}). It is not in
+     * any zone and is not registered with the game.
+     */
+    private static Card createPlaceholderDefender(final Player controller) {
+        Card fake = new Card(-1, controller.getGame());
+        fake.setName(PLACEHOLDER_DEFENDER_NAME);
+        fake.setController(controller, 0);
+        return fake;
+    }
+
+    private static boolean isPlaceholderDefender(final GameEntity e) {
+        return e instanceof Card c && c.getId() == -1 && PLACEHOLDER_DEFENDER_NAME.equals(c.getName());
+    }
+
+    /**
+     * Maps a defender into a copied game. A placeholder defender is not part
+     * of any zone, so the entity map cannot know it; recreate it for the copy
+     * instead.
+     */
+    private static GameEntity mapDefender(final GameEntity defender, final IEntityMap map) {
+        if (isPlaceholderDefender(defender)) {
+            return createPlaceholderDefender(map.map(((Card) defender).getController()));
+        }
+        return map.map(defender);
     }
 
     public void initConstraints() {
@@ -622,10 +653,7 @@ public class Combat {
                 for (AttackingBand abDef : bands) {
                     unregisterDefender(c, abDef);
                     // Rule 506.4c workaround to keep creatures in combat
-                    Card fake = new Card(-1, c.getGame());
-                    fake.setName("<Nothing>");
-                    fake.setController(c.getController(), 0);
-                    attackerBuffer.put(fake, abDef);
+                    attackerBuffer.put(createPlaceholderDefender(c.getController()), abDef);
                 }
                 bands.clear();
                 attackedByBands.get().putAll(attackerBuffer);

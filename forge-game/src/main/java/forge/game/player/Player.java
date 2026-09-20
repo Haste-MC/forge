@@ -2805,7 +2805,13 @@ public class Player extends GameEntity implements Comparable<Player> {
     private static Card mapEffectCard(Card effect, Function<Card, Card> mapper) {
         // An effect card in no zone was not part of the copy; leave the
         // snapshot's field unset so its lazy creation path stays consistent.
-        return effect == null || effect.getZone() == null ? null : mapper.apply(effect);
+        // Zone.remove keeps the card's last known zone (e.g. the monarch
+        // effect of a player who lost the monarchy), so check the zone's
+        // contents rather than only Card.getZone().
+        if (effect == null || effect.getZone() == null || !effect.getZone().contains(effect)) {
+            return null;
+        }
+        return mapper.apply(effect);
     }
 
     public void addCommander(Card commander) {
@@ -3442,7 +3448,7 @@ public class Player extends GameEntity implements Comparable<Player> {
     }
 
     public String getMonarchSet() {
-        return monarchEffect == null ? monarchEffect.getSetCode() : null;
+        return monarchEffect == null ? null : monarchEffect.getSetCode();
     }
 
     public void createMonarchEffect(final String set) {

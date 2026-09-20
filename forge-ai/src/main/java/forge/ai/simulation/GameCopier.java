@@ -23,7 +23,9 @@ import forge.game.player.Player;
 import forge.game.player.RegisteredPlayer;
 import forge.game.spellability.SpellAbility;
 import forge.game.spellability.SpellAbilityStackInstance;
+import forge.game.replacement.ReplacementEffect;
 import forge.game.staticability.StaticAbility;
+import forge.game.trigger.Trigger;
 import forge.game.trigger.TriggerType;
 import forge.game.zone.PlayerZoneBattlefield;
 import forge.game.zone.ZoneType;
@@ -326,10 +328,21 @@ public class GameCopier {
         newCard.setGamePieceType(c.getGamePieceType());
         newCard.setOwner(newOwner);
         newCard.setName(c.getName());
+        newCard.setSetCode(c.getSetCode());
         newCard.setCommander(c.isCommander());
         newCard.setType(new CardType(c.getType()));
         for (StaticAbility stAb : c.getStaticAbilities()) {
             newCard.addStaticAbility(stAb.copy(newCard, true));
+        }
+        // Effect cards created by the game itself (monarch, initiative,
+        // radiation, ...) have no paper card and carry their rules text as
+        // triggers and replacement effects; without them the copy would
+        // silently drop e.g. the monarch's end-step draw.
+        for (Trigger t : c.getTriggers()) {
+            newCard.addTrigger(t.copy(newCard, true));
+        }
+        for (ReplacementEffect re : c.getReplacementEffects()) {
+            newCard.addReplacementEffect(re.copy(newCard, true));
         }
         for (SpellAbility sa : c.getSpellAbilities()) {
             SpellAbility saCopy = sa.copy(newCard, true);
