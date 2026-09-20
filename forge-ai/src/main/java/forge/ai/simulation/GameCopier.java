@@ -22,6 +22,7 @@ import forge.game.phase.PhaseHandler;
 import forge.game.phase.PhaseType;
 import forge.game.player.Player;
 import forge.game.player.RegisteredPlayer;
+import forge.game.replacement.ReplacementEffect;
 import forge.game.spellability.SpellAbility;
 import forge.game.spellability.SpellAbilityStackInstance;
 import forge.game.staticability.StaticAbility;
@@ -155,11 +156,13 @@ public class GameCopier {
             if (origCard.hasRemembered()) {
                 for (Object o : origCard.getRemembered()) {
                     if (o instanceof GameObject) {
-                        // Sometimes, a spell can "remember" a token card that's not in any zone
-                        // (and thus wouldn't have been copied) - for example Swords to Plowshares
-                        // remembering its target for LKI. Skip these to not crash in find().
-                        if (o instanceof Card && ((Card)o).getZone() == null) {
-                           continue;
+                        // Sometimes, a spell can "remember" a card that was not copied - for
+                        // example Swords to Plowshares remembering its target for LKI (no zone),
+                        // or a token that left the battlefield: Zone.add only lists tokens on the
+                        // battlefield, so its Card.getZone() is set even though it's in no zone.
+                        // Skip these to not crash in find().
+                        if (o instanceof Card && !cardMap.containsKey(o)) {
+                            continue;
                         }
                         // The same for an ability (a spell remembering itself or the ability that created it): the copy of
                         // the stack is only made below, so there is nothing to map it to yet.
