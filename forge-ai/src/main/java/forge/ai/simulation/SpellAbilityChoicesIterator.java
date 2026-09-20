@@ -169,8 +169,13 @@ public class SpellAbilityChoicesIterator {
             bestScoreForMode = lastScore;
         }
 
+        // Once the time budget is exhausted, no further choices, targets or modes are
+        // tried: every level is treated as exhausted, so that the bookkeeping below still
+        // unwinds and the best result seen so far is kept.
+        final boolean outOfTime = controller.isOutOfTime();
+
         if (!choicePoints.isEmpty()) {
-            for (int i = choicePoints.size() - 1; i >= 0; i--) {
+            for (int i = choicePoints.size() - 1; i >= 0 && !outOfTime; i--) {
                 ChoicePoint cp = choicePoints.get(i);
                 if (cp.nextChoice + 1 < cp.numChoices) {
                     cp.nextChoice++;
@@ -192,7 +197,7 @@ public class SpellAbilityChoicesIterator {
             pushTarget = true;
             doneEvaluating(bestScoreForTarget);
             bestScoreForTarget = new Score(Integer.MIN_VALUE);
-            while (nextTarget + 1 < cachedTargetScores.size()) {
+            while (!outOfTime && nextTarget + 1 < cachedTargetScores.size()) {
                 nextTarget++;
                 if (cachedTargetScores.get(nextTarget) == null) {
                     return true;
@@ -204,7 +209,7 @@ public class SpellAbilityChoicesIterator {
         if (modeIterator != null) {
             doneEvaluating(bestScoreForMode);
             bestScoreForMode = new Score(Integer.MIN_VALUE);
-            if (modeIterator.hasNext()) {
+            if (!outOfTime && modeIterator.hasNext()) {
                 selectedModes = remapModes(modeIterator.next());
                 advancedToNextMode = true;
                 return true;
