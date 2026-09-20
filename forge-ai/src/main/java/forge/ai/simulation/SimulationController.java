@@ -12,9 +12,14 @@ import java.util.List;
 
 public class SimulationController {
     private static boolean DEBUG = false;
-    private static final int DEFAULT_MAX_DEPTH = 3;
+    public static final int DEFAULT_MAX_DEPTH = 3;
 
     private final int maxDepth;
+    // Absolute System.nanoTime() value after which no further candidates, targets,
+    // modes or deeper recursion levels are evaluated. Without a budget the search is
+    // unbounded and a single decision on a large board can take longer than 30 minutes.
+    // Long.MAX_VALUE means no deadline.
+    private final long deadlineNanos;
     private List<Plan.Decision> currentStack;
     private List<Score> scoreStack;
     private List<GameSimulator> simulatorStack;
@@ -44,7 +49,12 @@ public class SimulationController {
     }
 
     public SimulationController(Score score, int maxDepth) {
+        this(score, maxDepth, Long.MAX_VALUE);
+    }
+
+    public SimulationController(Score score, int maxDepth, long deadlineNanos) {
         this.maxDepth = maxDepth;
+        this.deadlineNanos = deadlineNanos;
         bestScore = score;
         scoreStack = new ArrayList<>();
         scoreStack.add(score);
@@ -56,8 +66,12 @@ public class SimulationController {
         return scoreStack.size() - 1;
     }
 
+    public boolean isOutOfTime() {
+        return deadlineNanos != Long.MAX_VALUE && System.nanoTime() - deadlineNanos >= 0;
+    }
+
     public boolean shouldRecurse() {
-        return !GameStateEvaluator.isWinning(bestScore.value) && getRecursionDepth() < maxDepth;
+        return !GameStateEvaluator.isWinning(bestScore.value) && getRecursionDepth() < maxDepth && !isOutOfTime();
     }
 
     public Plan.Decision getLastDecision() {
