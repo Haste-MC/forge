@@ -12,7 +12,7 @@ import java.util.List;
 
 public class SimulationController {
     private static boolean DEBUG = false;
-    public static final int DEFAULT_MAX_DEPTH = 3;
+    static final int DEFAULT_MAX_DEPTH = 3;
 
     private final int maxDepth;
     // Absolute System.nanoTime() value after which no further candidates, targets,
@@ -66,8 +66,16 @@ public class SimulationController {
         return scoreStack.size() - 1;
     }
 
-    public boolean isOutOfTime() {
+    /**
+     * @param deadlineNanos an absolute {@link System#nanoTime()} value, or {@link Long#MAX_VALUE} for no deadline
+     * @return true if the deadline has passed
+     */
+    static boolean isPast(long deadlineNanos) {
         return deadlineNanos != Long.MAX_VALUE && System.nanoTime() - deadlineNanos >= 0;
+    }
+
+    public boolean isOutOfTime() {
+        return isPast(deadlineNanos);
     }
 
     public boolean shouldRecurse() {

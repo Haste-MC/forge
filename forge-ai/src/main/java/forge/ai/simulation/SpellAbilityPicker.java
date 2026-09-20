@@ -161,7 +161,9 @@ public class SpellAbilityPicker {
                     candidateSAs2.add(sa);
                 }
             }
-            if (!candidateSAs2.isEmpty()) {
+            // Skip the after-blockers round when the first round already spent the budget:
+            // its best-so-far plan already satisfies the at-least-one-candidate guarantee.
+            if (!candidateSAs2.isEmpty() && !SimulationController.isPast(deadlineNanos)) {
                 if (printOutput) {
                     System.err.println("Formula plan with phase bloom");
                 }
