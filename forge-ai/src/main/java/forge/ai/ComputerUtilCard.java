@@ -463,8 +463,9 @@ public class ComputerUtilCard {
             int score = tmp.isTapped() ? 2 : 0;
             score += tmp.isBasicLand() ? 1 : 0;
             score -= tmp.isCreature() ? 4 : 0;
-            // one half of a meld pair whose other half is already in play is worth far more than a basic
-            score -= hasMeldPartnerInPlay(tmp) ? 10 : 0;
+            // one half of a meld pair whose other half is in play or waiting in the command zone is worth
+            // far more than a basic
+            score -= hasMeldPartnerAvailable(tmp) ? 10 : 0;
             for (Card aura : tmp.getEnchantedBy()) {
                 if (aura.getController().isOpponentOf(tmp.getController())) {
                     score += 5;
@@ -484,7 +485,7 @@ public class ComputerUtilCard {
         return worstLand;
     }
 
-    private static boolean hasMeldPartnerInPlay(final Card c) {
+    private static boolean hasMeldPartnerAvailable(final Card c) {
         if (c.isToken() || c.getRules() == null || c.getController() == null) {
             return false;
         }
@@ -492,7 +493,9 @@ public class ComputerUtilCard {
         if (partner == null || partner.isEmpty()) {
             return false;
         }
-        return c.getController().getCardsIn(ZoneType.Battlefield).anyMatch(CardPredicates.nameEquals(partner));
+        final Player controller = c.getController();
+        return controller.getCardsIn(ZoneType.Battlefield).anyMatch(CardPredicates.nameEquals(partner))
+                || controller.getCardsIn(ZoneType.Command).anyMatch(CardPredicates.nameEquals(partner));
     }
 
     public static Card getBestLandToAnimate(final Iterable<Card> lands) {
