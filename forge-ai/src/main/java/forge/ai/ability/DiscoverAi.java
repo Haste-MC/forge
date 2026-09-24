@@ -71,6 +71,13 @@ public class DiscoverAi extends SpellAbilityAi {
 
     @Override
     public boolean confirmAction(Player ai, SpellAbility sa, PlayerActionConfirmMode mode, String message, Map<String, Object> params) {
+        if (params == null || !(params.get("Card") instanceof Card)) {
+            // Not the confirmation the Discover effect asks for. Any other confirmation that happens to be
+            // routed here because the card's first spell ability is a Discover spell (e.g. a legendary
+            // sorcery asked about returning to the command zone) has to be answered by the default logic.
+            return super.confirmAction(ai, sa, mode, message, params);
+        }
+
         Card c = (Card)params.get("Card");
         for (SpellAbility s : AbilityUtils.getBasicSpellsFromPlayEffect(c, ai)) {
             if (s.isLandAbility()) {
