@@ -265,7 +265,7 @@ public class GameStateEvaluator {
     public int evalCard(Game game, Player aiPlayer, Card c) {
         // TODO: These should be based on other considerations - e.g. in relation to opponents state.
         if (c.isCreature()) {
-            return eval.evaluateCreature(c);
+            return discountForGoad(aiPlayer, c, eval.evaluateCreature(c));
         }
         if (c.isLand()) {
             return evaluateLand(c);
@@ -283,6 +283,33 @@ public class GameStateEvaluator {
             value += 2 * c.getCounters(CounterEnumType.LOYALTY);
         }
         return value;
+    }
+
+    // A creature an opponent controls is worth less to its controller once the AI has goaded it
+    // (CR 701.38a): it attacks each combat if able, so it is no longer available as a blocker, and
+    // while it can attack a player that has not goaded it, it may not be aimed at the AI at all.
+    // The board score counts every opponent permanent at full value, so without this an effect that
+    // goads the whole table - handing each opponent a creature the AI has already pointed away from
+    // itself - reads as a straight loss and the AI will not play it at a large table, even when the
+    // same effect is clearly worth it at a small one.
+    // The discounts stay moderate because a goad often lasts only until the goader's next turn,
+    // while this scores the board as if the state were permanent.
+    private static final int GOADED_ELSEWHERE_DIVISOR = 2;
+    private static final int GOADED_AT_AI_DIVISOR = 4;
+
+    private static int discountForGoad(Player aiPlayer, Card c, int value) {
+        if (value <= 0 || !c.isGoadedBy(aiPlayer) || !c.getController().isOpponentOf(aiPlayer)) {
+            return value;
+        }
+        for (Player p : aiPlayer.getGame().getPlayers()) {
+            // another opponent it may be sent at instead - a planeswalker does not count, goad only
+            // redirects to players
+            if (p.isInGame() && p.isOpponentOf(aiPlayer) && !p.equals(c.getController()) && !c.isGoadedBy(p)) {
+                return value / GOADED_ELSEWHERE_DIVISOR;
+            }
+        }
+        // it still has to come at the AI, but it can no longer be held back to block
+        return value - value / GOADED_AT_AI_DIVISOR;
     }
 
     public static int evaluateLand(Card c) {
