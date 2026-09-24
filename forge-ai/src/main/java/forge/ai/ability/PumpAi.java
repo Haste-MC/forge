@@ -468,6 +468,27 @@ public class PumpAi extends PumpAiBase {
                 sa.getTargets().add(ai);
                 return true;
             }
+            if (tgt.canTgtPlayer() && !tgt.canTgtCreature()) {
+                // A pump that can only hit players does nothing on its own - it is the carrier for a
+                // sub-ability, which decides on its own whether the ability as a whole is worth using.
+                // Without this the AI cannot even reach that decision and silently drops the ability.
+                Player weakest = null;
+                int weakestBoard = Integer.MAX_VALUE;
+                for (final Player opp : ai.getOpponents()) {
+                    if (!sa.canTarget(opp)) {
+                        continue;
+                    }
+                    int board = ComputerUtilCard.evaluatePermanentList(opp.getCardsIn(ZoneType.Battlefield));
+                    if (board < weakestBoard) {
+                        weakestBoard = board;
+                        weakest = opp;
+                    }
+                }
+                if (weakest != null) {
+                    sa.getTargets().add(weakest);
+                    return true;
+                }
+            }
             if (tgt.canTgtCreature()) {
                 list = getPumpCreatures(ai, sa, defense, attack, keywords, immediately);
             } else {

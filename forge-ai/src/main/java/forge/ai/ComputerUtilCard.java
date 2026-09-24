@@ -20,6 +20,7 @@ import org.apache.commons.lang3.tuple.Pair;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
 
 import forge.StaticData;
 import forge.ai.simulation.GameStateEvaluator;
@@ -2021,6 +2022,88 @@ public class ComputerUtilCard {
             return new AiAbilityDecision(100, AiPlayDecision.ResponseToStackResolve);
         }
         return new AiAbilityDecision(0, AiPlayDecision.CantPlayAi);
+    }
+
+    /**
+     * Static ability modes that take something away from a player instead of granting something.
+     * A permanent carrying one of these aimed at its own controller is a liability for that player.
+     */
+    private static final Set<StaticAbilityMode> RESTRICTIVE_MODES = Sets.immutableEnumSet(
+            StaticAbilityMode.CantBeCast, StaticAbilityMode.CantBeActivated, StaticAbilityMode.CantPlayLand,
+            StaticAbilityMode.CantAttack, StaticAbilityMode.CantAttackUnless, StaticAbilityMode.CantBlock,
+            StaticAbilityMode.CantBlockUnless, StaticAbilityMode.CantCrew, StaticAbilityMode.CantDraw,
+            StaticAbilityMode.CantDiscard, StaticAbilityMode.CantGainLife, StaticAbilityMode.CantPayLife,
+            StaticAbilityMode.CantPutCounter, StaticAbilityMode.CantRegenerate, StaticAbilityMode.CantSacrifice,
+            StaticAbilityMode.CantTransform, StaticAbilityMode.CantVenture, StaticAbilityMode.CantBecomeMonarch,
+            StaticAbilityMode.MustAttack, StaticAbilityMode.PlayerMustAttack, StaticAbilityMode.DisableTriggers,
+            StaticAbilityMode.RaiseCost);
+
+    /** Parameters that limit a static ability to certain players. */
+    private static final String[] RESTRICTION_PLAYER_PARAMS = {"Caster", "Activator", "ValidPlayer", "Player",
+            "Defender", "ValidDefender"};
+
+    /** Parameters that limit a static ability to certain cards. */
+    private static final String[] RESTRICTION_CARD_PARAMS = {"ValidCard", "Affected", "ValidAttacker", "ValidBlocker"};
+
+    /** Zones searched for something a card-scoped restriction could apply to. */
+    private static final List<ZoneType> RESTRICTION_ZONES = Lists.newArrayList(ZoneType.Battlefield, ZoneType.Hand);
+
+    /**
+     * Whether a permanent's own static abilities work against the player controlling it, as in
+     * "you can't cast creature spells" or "creatures you control can't attack". Such a permanent is
+     * worth less than nothing to its controller, so the AI may happily part with it.
+     *
+     * <p>Judged from the static ability layers rather than from card names, so cards the AI has
+     * never seen before are covered too. Only restrictions that single the controller out count:
+     * a symmetric one that binds everybody (a tax on all players, say) is usually played on purpose.
+     */
+    public static boolean restrictsItsController(final Card c) {
+        if (c == null || c.getController() == null) {
+            return false;
+        }
+        final Player controller = c.getController();
+        for (final StaticAbility st : c.getStaticAbilities()) {
+            if (!IterableUtil.any(st.getMode(), RESTRICTIVE_MODES::contains) || !st.checkConditions()) {
+                continue;
+            }
+            if (restrictsPlayer(st, controller) || restrictsOnlyOwnCards(st, controller)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** A player parameter that names the given player, e.g. "you can't cast creature spells". */
+    private static boolean restrictsPlayer(final StaticAbility st, final Player player) {
+        for (final String param : RESTRICTION_PLAYER_PARAMS) {
+            if (st.hasParam(param) && st.matchesValidParam(param, player)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * A card parameter that bites the player's own cards and none of their opponents', e.g.
+     * "creatures you control can't attack". A restriction that hits both sides is not a liability.
+     */
+    private static boolean restrictsOnlyOwnCards(final StaticAbility st, final Player player) {
+        boolean hitsOwn = false;
+        for (final String param : RESTRICTION_CARD_PARAMS) {
+            if (!st.hasParam(param)) {
+                continue;
+            }
+            for (final Card other : player.getGame().getCardsIn(RESTRICTION_ZONES)) {
+                if (!st.matchesValidParam(param, other)) {
+                    continue;
+                }
+                if (other.getController() != player) {
+                    return false;
+                }
+                hitsOwn = true;
+            }
+        }
+        return hitsOwn;
     }
 
     public static boolean isUselessCreature(Player ai, Card c) {
