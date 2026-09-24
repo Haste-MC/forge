@@ -26,7 +26,6 @@ import forge.game.card.Card;
 import forge.game.card.CardCollection;
 import forge.game.card.CardCollectionView;
 import forge.game.card.CardLists;
-import forge.game.card.CardPredicates;
 import forge.game.cost.Cost;
 import forge.game.phase.PhaseType;
 import forge.game.player.Player;
@@ -60,7 +59,7 @@ public class ControlGainAi extends SpellAbilityAi {
         // "NewController" pointing at somebody else turns this around: the AI is not taking a
         // permanent, it is handing one of its own over. The rest of this method looks for the best
         // permanent among the opponents' and would never find a legal target here.
-        if (sa.usesTargeting() && givesControlAway(ai, sa)) {
+        if (sa.usesTargeting() && ComputerUtil.givesControlAway(ai, sa)) {
             return chooseDonation(ai, sa, false);
         }
 
@@ -270,7 +269,8 @@ public class ControlGainAi extends SpellAbilityAi {
 
     @Override
     protected AiAbilityDecision doTriggerNoCost(Player ai, SpellAbility sa, boolean mandatory) {
-        if (sa.usesTargeting() && !"DonateTargetPerm".equals(sa.getParam("AILogic")) && givesControlAway(ai, sa)) {
+        if (sa.usesTargeting() && !"DonateTargetPerm".equals(sa.getParam("AILogic"))
+                && ComputerUtil.givesControlAway(ai, sa)) {
             AiAbilityDecision donation = chooseDonation(ai, sa, mandatory);
             if (donation.willingToPlay() || !mandatory) {
                 return donation;
@@ -340,59 +340,16 @@ public class ControlGainAi extends SpellAbilityAi {
     }
 
     /**
-     * Whether this ability hands a permanent over instead of taking one: it names a new controller,
-     * only the AI's own permanents are legal targets, and that new controller is somebody else (or
-     * is not settled yet because it comes from a target the parent ability has still to pick).
-     */
-    private static boolean givesControlAway(final Player ai, final SpellAbility sa) {
-        if (!sa.hasParam("NewController")) {
-            return false;
-        }
-        if (!CardLists.getTargetableCards(ai.getOpponents().getCardsIn(ZoneType.Battlefield), sa).isEmpty()
-                || CardLists.getTargetableCards(ai.getCardsIn(ZoneType.Battlefield), sa).isEmpty()) {
-            return false;
-        }
-        final List<Player> newController = AbilityUtils.getDefinedPlayers(sa.getHostCard(),
-                sa.getParam("NewController"), sa);
-        return newController.isEmpty() || !newController.contains(ai);
-    }
-
-    /**
-     * Picks one of the AI's own permanents to give away. Permanents whose static abilities work
-     * against their own controller go first - losing one of those is a gain, not a cost, and it can
-     * be the only way out of a lock the AI put itself into. Failing that the AI only parts with
-     * something it cannot use anyway, and takes the least valuable of those, so an optional ability
-     * is declined rather than paid for with a working permanent.
+     * Targets the permanent {@link ComputerUtil#getPermanentToDonate} settled on. The carrier
+     * ability picked its opponent from that same permanent, so both ends stay in step.
      */
     private static AiAbilityDecision chooseDonation(final Player ai, final SpellAbility sa, final boolean mandatory) {
         sa.resetTargets();
-        final CardCollection targetable = CardLists.getTargetableCards(ai.getCardsIn(ZoneType.Battlefield), sa);
-        if (targetable.isEmpty()) {
-            return new AiAbilityDecision(0, AiPlayDecision.TargetingFailed);
-        }
-
-        // Permanents that restrict their own controller, judged from the static ability layers.
-        CardCollection expendable = CardLists.filter(targetable, ComputerUtilCard::restrictsItsController);
-        if (expendable.isEmpty()) {
-            // Permanents the card scripts flag as good things to hand over.
-            final Card flagged = ComputerUtil.getCardPreference(ai, sa.getHostCard(), "DonateMe",
-                    CardLists.filter(targetable, CardPredicates.hasSVar("DonateMe")));
-            if (flagged != null) {
-                expendable = new CardCollection(flagged);
-            }
-        }
-        if (expendable.isEmpty()) {
-            // Creatures the AI gets nothing out of.
-            expendable = CardLists.filter(targetable, c -> ComputerUtilCard.isUselessCreature(ai, c));
-        }
-
-        // Among the permanents worth losing, hand over the one the opponent profits from the least.
-        Card choice = expendable.isEmpty() ? null : ComputerUtilCard.getWorstAI(expendable);
-        if (choice == null && mandatory) {
-            choice = ComputerUtilCard.getWorstAI(targetable);
-        }
+        final Card choice = ComputerUtil.getPermanentToDonate(ai, sa, mandatory);
         if (choice == null) {
-            return new AiAbilityDecision(0, AiPlayDecision.CantPlayAi);
+            return new AiAbilityDecision(0,
+                    CardLists.getTargetableCards(ai.getCardsIn(ZoneType.Battlefield), sa).isEmpty()
+                            ? AiPlayDecision.TargetingFailed : AiPlayDecision.CantPlayAi);
         }
         sa.getTargets().add(choice);
         return new AiAbilityDecision(100, AiPlayDecision.WillPlay);
