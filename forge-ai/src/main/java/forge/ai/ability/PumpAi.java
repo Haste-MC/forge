@@ -472,20 +472,20 @@ public class PumpAi extends PumpAiBase {
                 // A pump that can only hit players does nothing on its own - it is the carrier for a
                 // sub-ability, which decides on its own whether the ability as a whole is worth using.
                 // Without this the AI cannot even reach that decision and silently drops the ability.
-                Player weakest = null;
-                int weakestBoard = Integer.MAX_VALUE;
-                for (final Player opp : ai.getOpponents()) {
-                    if (!sa.canTarget(opp)) {
-                        continue;
-                    }
-                    int board = ComputerUtilCard.evaluatePermanentList(opp.getCardsIn(ZoneType.Battlefield));
-                    if (board < weakestBoard) {
-                        weakestBoard = board;
-                        weakest = opp;
+                final SpellAbility donation = ComputerUtil.getControlDonation(ai, sa);
+                Card given = null;
+                if (donation != null) {
+                    // The sub-ability hands one of the AI's own permanents over. Which opponent
+                    // should get it depends on what it is, so settle the permanent first and let
+                    // the sub-ability pick the same one again when it chooses its target.
+                    given = ComputerUtil.getPermanentToDonate(ai, donation, mandatory);
+                    if (given == null && !mandatory) {
+                        return false;
                     }
                 }
-                if (weakest != null) {
-                    sa.getTargets().add(weakest);
+                final Player recipient = ComputerUtil.getDonationRecipient(ai, sa, given);
+                if (recipient != null) {
+                    sa.getTargets().add(recipient);
                     return true;
                 }
             }

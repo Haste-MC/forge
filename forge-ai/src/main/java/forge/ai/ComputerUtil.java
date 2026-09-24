@@ -484,6 +484,103 @@ public class ComputerUtil {
         return null;
     }
 
+    /**
+     * Finds the part of an ability chain that hands one of the AI's own permanents to somebody else.
+     * Such an ability is usually split in two: a carrier that picks the new controller and a
+     * sub-ability that picks the permanent. Both halves have to agree on what is handed over, so
+     * both look the donation up through here.
+     */
+    public static SpellAbility getControlDonation(final Player ai, final SpellAbility sa) {
+        SpellAbility current = sa;
+        while (current != null) {
+            if (current.getApi() == ApiType.GainControl && givesControlAway(ai, current)) {
+                return current;
+            }
+            current = current.getSubAbility();
+        }
+        return null;
+    }
+
+    /**
+     * Whether an ability hands a permanent over instead of taking one: it names a new controller,
+     * only the AI's own permanents are legal targets, and that new controller is somebody else (or
+     * is not settled yet because it comes from a target the carrier has still to pick).
+     */
+    public static boolean givesControlAway(final Player ai, final SpellAbility sa) {
+        if (!sa.hasParam("NewController") || !sa.usesTargeting()) {
+            return false;
+        }
+        if (!CardLists.getTargetableCards(ai.getOpponents().getCardsIn(ZoneType.Battlefield), sa).isEmpty()
+                || CardLists.getTargetableCards(ai.getCardsIn(ZoneType.Battlefield), sa).isEmpty()) {
+            return false;
+        }
+        final List<Player> newController = AbilityUtils.getDefinedPlayers(sa.getHostCard(),
+                sa.getParam("NewController"), sa);
+        return newController.isEmpty() || !newController.contains(ai);
+    }
+
+    /**
+     * The permanent the AI would rather be without, for an ability that gives one away. Permanents
+     * whose static abilities work against their own controller come first - losing one of those is
+     * a gain, not a cost, and it can be the only way out of a lock the AI put itself into. Failing
+     * that the AI only parts with something it cannot use anyway, so an optional ability is declined
+     * rather than paid for with a working permanent. Returns null when there is nothing to give up.
+     */
+    public static Card getPermanentToDonate(final Player ai, final SpellAbility sa, final boolean mandatory) {
+        final CardCollection targetable = CardLists.getTargetableCards(ai.getCardsIn(ZoneType.Battlefield), sa);
+        if (targetable.isEmpty()) {
+            return null;
+        }
+
+        // Permanents that restrict their own controller, judged from the static ability layers.
+        CardCollection expendable = CardLists.filter(targetable, ComputerUtilCard::restrictsItsController);
+        if (expendable.isEmpty()) {
+            // Permanents the card scripts flag as good things to hand over.
+            final Card flagged = getCardPreference(ai, sa.getHostCard(), "DonateMe",
+                    CardLists.filter(targetable, CardPredicates.hasSVar("DonateMe")));
+            if (flagged != null) {
+                expendable = new CardCollection(flagged);
+            }
+        }
+        if (expendable.isEmpty()) {
+            // Creatures the AI gets nothing out of.
+            expendable = CardLists.filter(targetable, c -> ComputerUtilCard.isUselessCreature(ai, c));
+        }
+        if (expendable.isEmpty()) {
+            return mandatory ? ComputerUtilCard.getWorstAI(targetable) : null;
+        }
+        // Among the permanents worth losing, hand over the one the opponent profits from the least.
+        return ComputerUtilCard.getWorstAI(expendable);
+    }
+
+    /**
+     * Which opponent should receive a donated permanent. A permanent that restricts its own
+     * controller is a weapon and belongs with the biggest threat, where the restriction costs the
+     * most; anything else is a present and belongs with the opponent least able to turn it into
+     * something. A null permanent means nothing is handed over at all, which is treated like a
+     * present so the ability helps the opponents as little as possible.
+     *
+     * <p>Strength is {@link #evaluateBoardPosition}, which already scales a player down once their
+     * library is nearly gone. Forge has no general test for a player about to be knocked out, so a
+     * low life total is deliberately not read as one.
+     */
+    public static Player getDonationRecipient(final Player ai, final SpellAbility sa, final Card donation) {
+        final boolean weapon = donation != null && ComputerUtilCard.restrictsItsController(donation);
+        Player chosen = null;
+        int chosenScore = 0;
+        for (final Player opp : ai.getOpponents()) {
+            if (!sa.canTarget(opp)) {
+                continue;
+            }
+            final int score = evaluateBoardPosition(ai, opp);
+            if (chosen == null || (weapon ? score > chosenScore : score < chosenScore)) {
+                chosen = opp;
+                chosenScore = score;
+            }
+        }
+        return chosen;
+    }
+
     public static int getAIPreferenceParameter(final Card c, final String paramName, SpellAbility sa) {
         if (!c.hasSVar("AIPreferenceParams")) {
             return -1;
