@@ -26,6 +26,7 @@ import forge.game.ability.AbilityUtils;
 import forge.game.ability.ApiType;
 import forge.game.ability.effects.ProtectEffect;
 import forge.game.card.*;
+import forge.game.combat.AttackRequirement;
 import forge.game.combat.Combat;
 import forge.game.combat.CombatUtil;
 import forge.game.combat.GlobalAttackRestrictions;
@@ -192,6 +193,51 @@ public class AiAttackController {
             return CombatUtil.canAttackNextTurn(attacker, defender);
         }
         return CombatUtil.canAttack(attacker, defender);
+    }
+
+    /**
+     * Picks a legal defender for a creature that is required to attack (e.g. by goad or another
+     * "must attack" static ability), preferring {@code preferredDefender} among ties. Returns
+     * {@code null} if the creature has no requirement or no legal defender currently satisfies one.
+     */
+    private GameEntity resolveRequiredDefender(final Card attacker, final GameEntity preferredDefender, final Combat combat) {
+        final AttackRequirement requirement = combat.getAttackConstraints().getRequirements().get(attacker);
+        if (requirement == null) {
+            return null;
+        }
+        // check defenders in order of maximum requirements
+        List<Pair<GameEntity, Integer>> reqs = requirement.getSortedRequirements();
+        reqs.sort((r1, r2) -> {
+            if (r1.getValue() == r2.getValue()) {
+                // try to attack the designated defender
+                if (r1.getKey().equals(preferredDefender) && !r2.getKey().equals(preferredDefender)) {
+                    return -1;
+                }
+                if (r2.getKey().equals(preferredDefender) && !r1.getKey().equals(preferredDefender)) {
+                    return 1;
+                }
+                // otherwise PW
+                if (r1.getKey() instanceof Card && r2.getKey() instanceof Player) {
+                    return -1;
+                }
+                if (r2.getKey() instanceof Card && r1.getKey() instanceof Player) {
+                    return 1;
+                }
+                // or weakest player
+                if (r1.getKey() instanceof Player p1 && r2.getKey() instanceof Player p2) {
+                    return p1.getLife() - p2.getLife();
+                }
+            }
+            return r2.getValue() - r1.getValue();
+        });
+        for (Pair<GameEntity, Integer> e : reqs) {
+            if (e.getRight() == 0) continue;
+            GameEntity mustAttackDefMaybe = e.getLeft();
+            if (canAttackWrapper(attacker, mustAttackDefMaybe) && CombatUtil.getAttackCost(ai.getGame(), attacker, mustAttackDefMaybe) == null) {
+                return mustAttackDefMaybe;
+            }
+        }
+        return null;
     }
 
     /**
@@ -895,41 +941,7 @@ public class AiAttackController {
                         //TODO: if there are other ways to tap this creature (like mana creature), then don't need to attack
                         mustAttackDef = finalDefender;
                     } else {
-                        if (combat.getAttackConstraints().getRequirements().get(attacker) == null) return 0;
-                        // check defenders in order of maximum requirements
-                        List<Pair<GameEntity, Integer>> reqs = combat.getAttackConstraints().getRequirements().get(attacker).getSortedRequirements();
-                        final GameEntity def = finalDefender;
-                        reqs.sort((r1, r2) -> {
-                            if (r1.getValue() == r2.getValue()) {
-                                // try to attack the designated defender
-                                if (r1.getKey().equals(def) && !r2.getKey().equals(def)) {
-                                    return -1;
-                                }
-                                if (r2.getKey().equals(def) && !r1.getKey().equals(def)) {
-                                    return 1;
-                                }
-                                // otherwise PW
-                                if (r1.getKey() instanceof Card && r2.getKey() instanceof Player) {
-                                    return -1;
-                                }
-                                if (r2.getKey() instanceof Card && r1.getKey() instanceof Player) {
-                                    return 1;
-                                }
-                                // or weakest player
-                                if (r1.getKey() instanceof Player p1 && r2.getKey() instanceof Player p2) {
-                                    return p1.getLife() - p2.getLife();
-                                }
-                            }
-                            return r2.getValue() - r1.getValue();
-                        });
-                        for (Pair<GameEntity, Integer> e : reqs) {
-                            if (e.getRight() == 0) continue;
-                            GameEntity mustAttackDefMaybe = e.getLeft();
-                            if (canAttackWrapper(attacker, mustAttackDefMaybe) && CombatUtil.getAttackCost(ai.getGame(), attacker, mustAttackDefMaybe) == null) {
-                                mustAttackDef = mustAttackDefMaybe;
-                                break;
-                            }
-                        }
+                        mustAttackDef = resolveRequiredDefender(attacker, finalDefender, combat);
                     }
                     if (mustAttackDef != null) {
                         // combat is shared across these parallel futures and its attacker
@@ -939,6 +951,40 @@ public class AiAttackController {
                             combat.addAttacker(attacker, mustAttackDef);
                         }
                         attackersLeft.remove(attacker);
+                        numForcedAttackers.incrementAndGet();
+                    }
+                    return 0;
+                }).exceptionally(ex -> {
+                    ex.printStackTrace();
+                    return 0;
+                }));
+            }
+            // this.attackers only holds creatures that can attack the single, freely-chosen
+            // combat defender (see refreshCombatants). A creature that is goaded exclusively by
+            // that defender is barred from attacking it for as long as another, non-goading
+            // defender is legal (CombatUtil.canAttack), so it never reaches the loop above and
+            // its own must-attack requirement would otherwise be silently dropped - which then
+            // leaves AiController.declareAttackers with more violations than the best legal
+            // attack and throws the whole declaration away. Re-check the rest of the AI's
+            // creatures against the board-wide requirements AttackConstraints already computed
+            // and force those that still have a legal defender to go to, independent of the
+            // defender chosen for the free-choice attackers above.
+            for (final Card attacker : myList) {
+                if (this.attackers.contains(attacker)) {
+                    continue;
+                }
+                final AttackRequirement requirement = combat.getAttackConstraints().getRequirements().get(attacker);
+                if (requirement == null || !requirement.hasRequirement()) {
+                    continue;
+                }
+                final GameEntity finalDefender = defender;
+                futures.add(CompletableFuture.supplyAsync(() -> {
+                    GameEntity mustAttackDef = resolveRequiredDefender(attacker, finalDefender, combat);
+                    if (mustAttackDef != null) {
+                        // same shared, non-thread-safe combat multimap as above
+                        synchronized (combat) {
+                            combat.addAttacker(attacker, mustAttackDef);
+                        }
                         numForcedAttackers.incrementAndGet();
                     }
                     return 0;
