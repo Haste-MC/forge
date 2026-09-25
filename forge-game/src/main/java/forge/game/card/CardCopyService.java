@@ -378,6 +378,7 @@ public class CardCopyService {
         newCopy.setBestowTimestamp(copyFrom.getBestowTimestamp());
 
         newCopy.setTurnInZone(copyFrom.getTurnInZone());
+        newCopy.setAiAttachTurn(copyFrom.getAiAttachTurn());
 
         newCopy.setForetold(copyFrom.isForetold());
         newCopy.setForetoldCostByEffect(copyFrom.isForetoldCostByEffect());
