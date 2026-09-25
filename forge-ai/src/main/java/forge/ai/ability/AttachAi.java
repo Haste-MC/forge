@@ -1380,8 +1380,12 @@ public class AttachAi extends SpellAbilityAi {
                 }
             }
 
-            // avoid randomly moving the equipment back and forth between several creatures in one turn
-            if (AiCardMemory.isRememberedCard(aiPlayer, attachSource, AiCardMemory.MemorySet.ATTACHED_THIS_TURN) && !mandatory) {
+            // avoid randomly moving the equipment back and forth between several creatures in one turn.
+            // Checked against the Card itself (aiAttachTurn) rather than only AiCardMemory: the AI
+            // simulation evaluates many copies of the game per decision, each with its own fresh,
+            // empty AiCardMemory, so a memory-only check would never trigger during simulation.
+            if (!mandatory && (attachSource.getAiAttachTurn() == aiPlayer.getGame().getPhaseHandler().getTurn()
+                    || AiCardMemory.isRememberedCard(aiPlayer, attachSource, AiCardMemory.MemorySet.ATTACHED_THIS_TURN))) {
                 return null;
             }
 
@@ -1392,6 +1396,7 @@ public class AttachAi extends SpellAbilityAi {
             }
         }
 
+        attachSource.setAiAttachTurn(aiPlayer.getGame().getPhaseHandler().getTurn());
         AiCardMemory.rememberCard(aiPlayer, attachSource, AiCardMemory.MemorySet.ATTACHED_THIS_TURN);
 
         if (c == null && mandatory) {
