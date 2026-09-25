@@ -477,9 +477,14 @@ public class PumpAi extends PumpAiBase {
                 if (donation != null) {
                     // The sub-ability hands one of the AI's own permanents over. Which opponent
                     // should get it depends on what it is, so settle the permanent first and let
-                    // the sub-ability pick the same one again when it chooses its target.
-                    given = ComputerUtil.getPermanentToDonate(ai, donation, mandatory);
-                    if (given == null && !mandatory) {
+                    // the sub-ability pick the same one again when it chooses its target. That later
+                    // pick never treats itself as mandatory (declining is always legal for the
+                    // sub-ability on its own), so this has to ask the same question the same way -
+                    // a mandatory trigger with nothing worth giving away is not a reason to target an
+                    // opponent here, or the sub-ability would just fail to find a match once this
+                    // reaches the stack, instead of the trigger simply not firing.
+                    given = ComputerUtil.getPermanentToDonate(ai, donation, false);
+                    if (given == null) {
                         return false;
                     }
                 }
