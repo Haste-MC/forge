@@ -293,6 +293,12 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars, ITr
     // the player that under which control it enters
     private Player turnInController;
 
+    // AI bookkeeping: the turn on which the AI last moved this Equipment/Fortification to a new
+    // target, so it isn't moved back and forth between creatures several times in one turn (see
+    // AttachAi). Kept on the Card itself (like turnInZone) so it survives the game copies made
+    // for AI simulation, unlike AiCardMemory which is discarded with each copy's AiController.
+    private int aiAttachTurn = -1;
+
     private Map<String, Integer> xManaCostPaidByColor;
 
     private Player owner;
@@ -2040,6 +2046,13 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars, ITr
     }
     public final void setTurnInController(final Player p) {
         turnInController = p;
+    }
+
+    public final int getAiAttachTurn() {
+        return aiAttachTurn;
+    }
+    public final void setAiAttachTurn(final int turn) {
+        aiAttachTurn = turn;
     }
 
     public final void setManaCost(final ManaCost s) {
