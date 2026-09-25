@@ -521,6 +521,7 @@ public class GameCopier {
             }
 
             newCard.setCameUnderControlSinceLastUpkeep(c.cameUnderControlSinceLastUpkeep());
+            newCard.setAiAttachTurn(c.getAiAttachTurn());
 
             newCard.setPTTable(c.getSetPTTable());
             newCard.setPTCharacterDefiningTable(c.getSetPTCharacterDefiningTable());
