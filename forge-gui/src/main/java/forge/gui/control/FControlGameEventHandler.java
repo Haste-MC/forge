@@ -24,6 +24,7 @@ import forge.util.Lang;
 
 import java.util.*;
 import java.util.Map.Entry;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class FControlGameEventHandler extends IGameEventVisitor.Base<Void> {
     private final PlayerControllerHuman humanController;
@@ -36,10 +37,19 @@ public class FControlGameEventHandler extends IGameEventVisitor.Base<Void> {
     private final PlayerZoneUpdates zonesUpdate = new PlayerZoneUpdates();
     private final Map<PlayerView, Object> playersWithValidTargets = Maps.newHashMap();
 
-    private boolean processEventsQueued, needPhaseUpdate, needCombatUpdate, needStackUpdate, needPlayerControlUpdate, refreshFieldUpdate, showExileUpdate;
-    private boolean gameOver, gameFinished;
-    private boolean needSaveState = false;
-    private PlayerView turnUpdate, activatingPlayer;
+    // All of these are written on the game thread (the visit methods, called from the event bus) and
+    // read and cleared on the UI thread (processEvents), without any synchronization between the two.
+    // Without volatile, either thread may keep working from a stale value: a stale
+    // processEventsQueued=true stops the handler from ever queueing again, and a stale
+    // gameFinished=false skips finishGame() - in both cases the UI stops following the game for the
+    // rest of the match, with nothing to show why.
+    /** Set while one processEvents run is queued; see {@link #processEvent()}. */
+    private final AtomicBoolean processEventsQueued = new AtomicBoolean();
+
+    private volatile boolean needPhaseUpdate, needCombatUpdate, needStackUpdate, needPlayerControlUpdate, refreshFieldUpdate, showExileUpdate;
+    private volatile boolean gameOver, gameFinished;
+    private volatile boolean needSaveState = false;
+    private volatile PlayerView turnUpdate, activatingPlayer;
 
     public FControlGameEventHandler(final PlayerControllerHuman humanController0) {
         humanController = humanController0;
@@ -54,7 +64,7 @@ public class FControlGameEventHandler extends IGameEventVisitor.Base<Void> {
     private final Runnable processEvents = new Runnable() {
         @Override
         public void run() {
-            processEventsQueued = false;
+            processEventsQueued.set(false);
 
             synchronized (cardsUpdate) {
                 if (!cardsUpdate.isEmpty()) {
@@ -158,8 +168,12 @@ public class FControlGameEventHandler extends IGameEventVisitor.Base<Void> {
     }
 
     private Void processEvent() {
-        if (processEventsQueued) { return null; } //avoid queuing event processing multiple times
-        processEventsQueued = true;
+        // compareAndSet, not "if (flag) return; flag = true;": several game-thread events can arrive
+        // concurrently (the bus dispatches per thread), and two of them could both pass the check and
+        // queue the runnable twice. Volatile alone makes each read current, not the pair atomic.
+        if (!processEventsQueued.compareAndSet(false, true)) {
+            return null; //avoid queuing event processing multiple times
+        }
         GuiBase.getInterface().invokeInEdtLater(processEvents);
         return null;
     }
