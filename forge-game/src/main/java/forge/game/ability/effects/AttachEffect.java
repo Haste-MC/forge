@@ -146,8 +146,15 @@ public class AttachEffect extends SpellAbilityEffect {
                 continue;
 
             attachment.attachToEntity(attachTo, sa);
-            if (sa.hasParam("RememberAttached") && attachment.isAttachedToEntity(attachTo)) {
-                source.addRemembered(attachment);
+            if (attachment.isAttachedToEntity(attachTo)) {
+                // Stamp the turn here, where the move actually happens, not where the AI decided to
+                // make it: with simulation the decision runs on a copy of the game whose bookkeeping
+                // is thrown away afterwards, so a brake set during the decision never reaches the
+                // real card (see AttachAi and SpellAbilityPicker).
+                attachment.setAiAttachTurn(game.getPhaseHandler().getTurn());
+                if (sa.hasParam("RememberAttached")) {
+                    source.addRemembered(attachment);
+                }
             }
         }
 
