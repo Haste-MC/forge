@@ -343,6 +343,28 @@ public class SpellAbilityPicker {
         return false;
     }
 
+    /**
+     * Don't move an Equipment or Aura that was already moved this turn.
+     *
+     * <p>AttachAi keeps the classic AI from shuffling an Equipment between creatures within one turn,
+     * but nothing here ever asks it: this class decides purely by simulating board states, and for a
+     * free Equip cost two boards that differ only in which creature carries the Equipment can trade
+     * places back and forth for as long as the AI holds priority. Observed in a four-player game: the
+     * same {@code Equip {0}} resolved eight times in a single main phase.
+     *
+     * <p>So the brake is read here as well, from the same place AttachAi reads it - the turn stamped
+     * on the card when the attachment last moved (see AttachEffect). The first move of a turn is
+     * always allowed; only a second one in the same turn waits.
+     */
+    private boolean movesAnAttachmentAgainThisTurn(final SpellAbility sa) {
+        if (sa.getApi() != ApiType.Attach) {
+            return false;
+        }
+        Card host = sa.getHostCard();
+        return host != null && host.isAttachedToEntity()
+                && host.getAiAttachTurn() == player.getGame().getPhaseHandler().getTurn();
+    }
+
     private AiPlayDecision canPlayAndPayForSim(final SpellAbility sa) {
         if (!sa.checkRestrictions(sa.getHostCard(), player)) {
             return AiPlayDecision.CantPlaySa;
@@ -370,6 +392,9 @@ public class SpellAbilityPicker {
         }
         if (!ComputerUtilAbility.isFullyTargetable(sa)) {
             return AiPlayDecision.TargetingFailed;
+        }
+        if (movesAnAttachmentAgainThisTurn(sa)) {
+            return AiPlayDecision.AnotherTime;
         }
         if (shouldWaitForLater(sa)) {
             return AiPlayDecision.AnotherTime;
