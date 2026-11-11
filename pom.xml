@@ -30,7 +30,7 @@
         <!-- set snapshotName to blank for release -->
         <snapshotName>-SNAPSHOT</snapshotName>
         <!-- revision will be the global version string -->
-        <revision>${versionCode}${snapshotName}</revision>
+        <revision>${versionCode}-mtgplayer</revision>
     </properties>
 
     <licenses>
@@ -341,7 +341,7 @@
                 <executions>
                     <execution>
                         <id>flatten</id>
-                        <phase>deploy</phase>
+                        <phase>process-resources</phase>
                         <goals>
                             <goal>flatten</goal>
                         </goals>
